@@ -41,13 +41,28 @@ def normalize_skill(skill):
     aliases = {
         "ml": "machine learning",
         "ai/ml": "machine learning",
+
         "scikit learn": "scikit-learn",
+        "scikit-learn": "scikit-learn",
         "sklearn": "scikit-learn",
+
         "js": "javascript",
+
         "node": "node.js",
         "nodejs": "node.js",
+        "node.js": "node.js",
+
         "reactjs": "react",
-        "postgres": "postgresql"
+        "react.js": "react",
+
+        "postgres": "postgresql",
+        "postgres sql": "postgresql",
+
+        "mysql": "mysql",
+        "structured query language": "sql",
+
+        "powerbi": "power bi",
+        "power-bi": "power bi"
     }
 
     return aliases.get(skill, skill)

@@ -19,21 +19,12 @@ function App() {
   // RESUME STATES
 
   // =========================================================
-
   const [selectedFile, setSelectedFile] = useState(null);
-
   const [uploading, setUploading] = useState(false);
-
   const [resumeData, setResumeData] = useState(null);
-
   const [uploadMessage, setUploadMessage] = useState("");
-
-
-
   // =========================================================
-
   // STUDENT ID
-
   // =========================================================
 
   const [studentId, setStudentId] = useState(
@@ -57,8 +48,14 @@ function App() {
   const [internshipError, setInternshipError] = useState("");
 
   const [customizedResume, setCustomizedResume] = useState(null);
-
   const [coverLetter, setCoverLetter] = useState("");
+  const [generatedResumeId, setGeneratedResumeId] = useState(
+  () => localStorage.getItem("generated_resume_id") || null
+);
+
+const [generatedCoverLetterId, setGeneratedCoverLetterId] = useState(
+  () => localStorage.getItem("generated_cover_letter_id") || null
+);
 
   const [careerActionLoading, setCareerActionLoading] = useState("");
 
@@ -84,6 +81,39 @@ const [careerResponse, setCareerResponse] = useState("");
 const [careerIntent, setCareerIntent] = useState("");
 const [careerLoading, setCareerLoading] = useState(false);
 const [careerError, setCareerError] = useState("");
+// M4 — Application Tracker
+const [applications, setApplications] = useState([]);
+const [upcomingDeadlines, setUpcomingDeadlines] = useState([]);
+const [applicationLoading, setApplicationLoading] = useState(false);
+const [applicationError, setApplicationError] = useState("");
+
+const [applicationFilter, setApplicationFilter] = useState("All");
+const [applicationView, setApplicationView] = useState("All");
+const [applicationSearch, setApplicationSearch] = useState("");
+const [showApplicationForm, setShowApplicationForm] = useState(false);
+
+const [newApplication, setNewApplication] = useState({
+  company_name: "",
+  job_title: "",
+  job_description: "",
+  application_date: "",
+  deadline: "",
+  status: "Saved",
+  interview_date: "",
+  interview_status: "",
+  notes: "",
+  resume_id: null,
+  cover_letter_id: null
+});
+
+// M4 — Application Dashboard
+const [applicationDashboard, setApplicationDashboard] = useState({
+  total_applications: 0,
+  active_applications: 0,
+  interviews_scheduled: 0,
+  offers_received: 0,
+  rejected_applications: 0
+});
 
   // =========================================================
 
@@ -106,23 +136,15 @@ const [careerError, setCareerError] = useState("");
   // =========================================================
 
   const menuItems = [
-
-    { name: "Dashboard", icon: "⌂" },
-
-    { name: "My Profile", icon: "👤" },
-
-    { name: "Resume", icon: "📄" },
-
-    { name: "Internships", icon: "💼" },
-
-    { name: "Skill Gap", icon: "🎯" },
-
-    { name: "Interview Prep", icon: "🎤" },
-
-    { name: "AI Assistant", icon: "✨" },
-
-  ];
-
+  { name: "Dashboard", icon: "⌂" },
+  { name: "My Profile", icon: "👤" },
+  { name: "Resume", icon: "📄" },
+  { name: "Internships", icon: "💼" },
+  { name: "Skill Gap", icon: "🎯" },
+  { name: "Interview Prep", icon: "🎤" },
+  { name: "Application Tracker", icon: "📋" },
+  { name: "AI Assistant", icon: "✨" },
+];
 
 
   // =========================================================
@@ -600,12 +622,11 @@ const [careerError, setCareerError] = useState("");
     setCareerActionLoading(`resume-${jobId}`);
 
     setCareerActionError("");
+setCareerActionJobId(jobId);
 
-    setCareerActionJobId(jobId);
-
-    setCustomizedResume(null);
-
-    setCoverLetter("");
+setCoverLetter("");
+setGeneratedCoverLetterId(null);
+localStorage.removeItem("generated_cover_letter_id");
 
     try {
 
@@ -638,8 +659,20 @@ const [careerError, setCareerError] = useState("");
         );
 
       }
-
       setCustomizedResume(data.customized_resume || null);
+
+const resumeId = data.resume_id || null;
+
+setGeneratedResumeId(resumeId);
+
+if (resumeId) {
+  localStorage.setItem("generated_resume_id", resumeId);
+
+  setNewApplication((prev) => ({
+    ...prev,
+    resume_id: resumeId
+  }));
+}
 
     } catch (error) {
 
@@ -710,8 +743,20 @@ const [careerError, setCareerError] = useState("");
         );
 
       }
-
       setCoverLetter(data.cover_letter || "");
+
+const coverLetterId = data.cover_letter_id || null;
+
+setGeneratedCoverLetterId(coverLetterId);
+
+if (coverLetterId) {
+  localStorage.setItem("generated_cover_letter_id", coverLetterId);
+
+  setNewApplication((prev) => ({
+    ...prev,
+    cover_letter_id: coverLetterId
+  }));
+}
 
     } catch (error) {
 
@@ -723,7 +768,7 @@ const [careerError, setCareerError] = useState("");
 
       );
 
-    } finally {
+    } finally { 
 
       setCareerActionLoading("");
 
@@ -819,6 +864,255 @@ const askCareerAssistant = async (questionOverride = "") => {
     setCareerLoading(false);
   }
 };
+// M4 — Load Application Tracker data
+const loadApplications = async (statusFilter = "") => {
+  setApplicationLoading(true);
+  setApplicationError("");
+
+  try {
+    const id = await loadStudentId();
+
+    let url = `${API_URL}/applications/${encodeURIComponent(id)}`;
+
+    if (statusFilter && statusFilter !== "All") {
+      url += `?status=${encodeURIComponent(statusFilter)}`;
+    }
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.detail || "Unable to load applications."
+      );
+    }
+
+    const loadedApplications = data.applications || [];
+
+setApplications(loadedApplications);
+calculateUpcomingDeadlines(loadedApplications);
+  } catch (error) {
+    console.error("Application Tracker error:", error);
+    setApplicationError(
+      error.message || "Unable to load applications."
+    );
+  } finally {
+    setApplicationLoading(false);
+  }
+};
+const calculateUpcomingDeadlines = (applicationList) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const upcoming = applicationList
+    .filter((application) => {
+      if (!application.deadline) return false;
+
+      const deadline = new Date(application.deadline);
+      deadline.setHours(0, 0, 0, 0);
+
+      return deadline >= today;
+    })
+    .sort(
+      (a, b) =>
+        new Date(a.deadline) - new Date(b.deadline)
+    );
+
+  setUpcomingDeadlines(upcoming);
+};
+useEffect(() => {
+  calculateUpcomingDeadlines(applications);
+}, [applications]);
+
+// Restore generated career documents whenever the user enters a page.
+// This keeps the generated Resume/Cover Letter connected to the
+// Application Tracker even after navigation or a page refresh.
+useEffect(() => {
+  const storedResumeId = localStorage.getItem("generated_resume_id");
+  const storedCoverLetterId = localStorage.getItem("generated_cover_letter_id");
+
+  if (storedResumeId) {
+    setGeneratedResumeId(storedResumeId);
+  }
+
+  if (storedCoverLetterId) {
+    setGeneratedCoverLetterId(storedCoverLetterId);
+  }
+
+  if (activePage === "Application Tracker") {
+    setNewApplication((prev) => ({
+      ...prev,
+      resume_id: prev.resume_id || storedResumeId || null,
+      cover_letter_id: prev.cover_letter_id || storedCoverLetterId || null
+    }));
+  }
+}, [activePage]);
+// M4 — Load Application Dashboard
+const loadApplicationDashboard = async () => {
+  try {
+    const id = await loadStudentId();
+
+    const response = await fetch(
+      `${API_URL}/applications/${encodeURIComponent(id)}/dashboard`
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.detail || "Unable to load application dashboard."
+      );
+    }
+
+    setApplicationDashboard({
+      total_applications: data.total_applications || 0,
+      active_applications: data.active_applications || 0,
+      interviews_scheduled: data.interviews_scheduled || 0,
+      offers_received: data.offers_received || 0,
+      rejected_applications: data.rejected_applications || 0
+    });
+  } catch (error) {
+    console.error("Application Dashboard error:", error);
+  }
+};
+
+// M4 — Add a new application
+const addApplication = async () => {
+  setApplicationLoading(true);
+  setApplicationError("");
+
+  try {
+    const id = await loadStudentId();
+
+    const response = await fetch(
+      `${API_URL}/applications/${encodeURIComponent(id)}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          ...newApplication,
+          interview_date: newApplication.interview_date || null
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.detail || "Unable to add application."
+      );
+    }
+
+    setShowApplicationForm(false);
+
+    setNewApplication({
+      company_name: "",
+      job_title: "",
+      job_description: "",
+      application_date: "",
+      deadline: "",
+      status: "Saved",
+      interview_date: "",
+      interview_status: "",
+      notes: "",
+      resume_id: null,
+      cover_letter_id: null
+    });
+
+    await loadApplications(applicationFilter);
+    await loadApplicationDashboard();
+  } catch (error) {
+    console.error("Add application error:", error);
+    setApplicationError(
+      error.message || "Unable to add application."
+    );
+  } finally {
+    setApplicationLoading(false);
+  }
+};
+// M4 — Update an application
+const updateApplication = async (applicationId, updates) => {
+  setApplicationLoading(true);
+  setApplicationError("");
+
+  try {
+    const id = await loadStudentId();
+
+    const response = await fetch(
+      `${API_URL}/application/${encodeURIComponent(id)}/${encodeURIComponent(applicationId)}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(updates)
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.detail || "Unable to update application."
+      );
+    }
+
+    await loadApplications(applicationFilter);
+    await loadApplicationDashboard();
+  } catch (error) {
+    console.error("Update application error:", error);
+    setApplicationError(
+      error.message || "Unable to update application."
+    );
+  } finally {
+    setApplicationLoading(false);
+  }
+};
+// M4 — Delete an application
+const deleteApplication = async (applicationId) => {
+  const confirmed = window.confirm(
+    "Are you sure you want to delete this application?"
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  setApplicationLoading(true);
+  setApplicationError("");
+
+  try {
+    const id = await loadStudentId();
+
+    const response = await fetch(
+      `${API_URL}/application/${encodeURIComponent(id)}/${encodeURIComponent(applicationId)}`,
+      {
+        method: "DELETE"
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.detail || "Unable to delete application."
+      );
+    }
+
+    await loadApplications(applicationFilter);
+    await loadApplicationDashboard();
+  } catch (error) {
+    console.error("Delete application error:", error);
+    setApplicationError(
+      error.message || "Unable to delete application."
+    );
+  } finally {
+    setApplicationLoading(false);
+  }
+};
 
   // =========================================================
 
@@ -841,6 +1135,11 @@ const askCareerAssistant = async (questionOverride = "") => {
       loadSkillGap();
 
     }
+     
+  if (activePage === "Application Tracker") {
+  loadApplications(applicationFilter);
+  loadApplicationDashboard();
+}
 
   }, [activePage]);
 
@@ -4263,10 +4562,666 @@ const InterviewPrepPage = () => {
 
       case "Interview Prep":
   return <InterviewPrepPage />;
+        case "Application Tracker":
 
+        return (
+          <div className="page-container">
 
+            <div className="page-heading">
+              <div>
+                <p className="small-label">
+                  M4 APPLICATION TRACKER
+                </p>
+                <h1>Application Tracker</h1>
+                <p>
+                  Track internships, applications, deadlines,
+                  interviews and follow-up notes in one place.
+                </p>
+              </div>
 
+              <button
+                className="primary-button"
+                onClick={() => setShowApplicationForm(true)}
+              >
+                + Add Application
+              </button>
+            </div>
 
+            {applicationError && (
+              <div className="error-message">
+                {applicationError}
+              </div>
+            )}
+
+            {/* APPLICATION DASHBOARD */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+                gap: "15px",
+                marginBottom: "25px"
+              }}
+            >
+              <div className="stat-card">
+                <div className="stat-icon">📋</div>
+                <div>
+                  <p>Total Applications</p>
+                  <h2>{applicationDashboard.total_applications}</h2>
+                </div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-icon">📈</div>
+                <div>
+                  <p>Active Applications</p>
+                  <h2>{applicationDashboard.active_applications}</h2>
+                </div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-icon">🎤</div>
+                <div>
+                  <p>Interviews Scheduled</p>
+                  <h2>{applicationDashboard.interviews_scheduled}</h2>
+                </div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-icon">🎉</div>
+                <div>
+                  <p>Offers Received</p>
+                  <h2>{applicationDashboard.offers_received}</h2>
+                </div>
+              </div>
+
+              <div className="stat-card">
+                <div className="stat-icon">❌</div>
+                <div>
+                  <p>Rejected</p>
+                  <h2>{applicationDashboard.rejected_applications}</h2>
+                </div>
+              </div>
+            </div>
+
+            <div className="application-tracker-content">
+              {/* UPCOMING DEADLINES */}
+{upcomingDeadlines.length > 0 && (
+  <div
+    className="coming-soon-card"
+    style={{
+      marginBottom: "20px",
+      textAlign: "left"
+    }}
+  >
+    <h2>📅 Upcoming Deadlines</h2>
+
+    <p style={{ marginBottom: "15px" }}>
+      Applications with upcoming deadlines.
+    </p>
+
+    <div
+      style={{
+        display: "grid",
+        gap: "12px"
+      }}
+    >
+      {upcomingDeadlines.map((application) => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const deadline = new Date(application.deadline);
+        deadline.setHours(0, 0, 0, 0);
+
+        const daysLeft = Math.ceil(
+          (deadline - today) / (1000 * 60 * 60 * 24)
+        );
+
+        return (
+          <div
+            key={application.id}
+            style={{
+              padding: "14px",
+              border: "1px solid #e5e7eb",
+              borderRadius: "10px",
+              background: "#fafafa"
+            }}
+          >
+            <strong>
+              {application.company_name}
+            </strong>
+
+            <div style={{ marginTop: "5px" }}>
+              {application.job_title}
+            </div>
+
+            <div
+              style={{
+                marginTop: "8px",
+                fontSize: "14px"
+              }}
+            >
+              📅 Deadline: {application.deadline}
+            </div>
+
+            <div
+              style={{
+                marginTop: "5px",
+                fontSize: "14px",
+                fontWeight: "600"
+              }}
+            >
+              ⏳{" "}
+              {daysLeft === 0
+                ? "Due today"
+                : daysLeft === 1
+                ? "1 day remaining"
+                : `${daysLeft} days remaining`}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+)}
+
+             
+              {/* FILTER + SEARCH */}
+<div
+  style={{
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "15px",
+    marginBottom: "20px",
+    flexWrap: "wrap"
+  }}
+>
+  {/* Search */}
+  <input
+    type="text"
+    placeholder="Search company or role..."
+    value={applicationSearch}
+    onChange={(e) => setApplicationSearch(e.target.value)}
+    style={{
+      flex: "1",
+      minWidth: "250px",
+      padding: "10px 12px",
+      borderRadius: "8px",
+      border: "1px solid #d1d5db",
+      fontSize: "14px"
+    }}
+  />
+
+  {/* Status Filter + Active/Completed View */}
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: "10px",
+      flexWrap: "wrap"
+    }}
+  >
+    <label>
+      <strong>Filter:</strong>
+    </label>
+
+    <select
+      value={applicationFilter}
+      onChange={(e) => {
+        const value = e.target.value;
+        setApplicationFilter(value);
+        loadApplications(value);
+      }}
+      style={{
+        padding: "9px 12px",
+        borderRadius: "8px",
+        border: "1px solid #d1d5db"
+      }}
+    >
+      <option value="All">All Applications</option>
+      <option value="Saved">Saved</option>
+      <option value="Planning to apply">Planning to apply</option>
+      <option value="Applied">Applied</option>
+      <option value="Application under review">
+        Application under review
+      </option>
+      <option value="Shortlisted">Shortlisted</option>
+      <option value="Interview scheduled">
+        Interview scheduled
+      </option>
+      <option value="Interview completed">
+        Interview completed
+      </option>
+      <option value="Offer received">Offer received</option>
+      <option value="Rejected">Rejected</option>
+      <option value="Withdrawn">Withdrawn</option>
+    </select>
+
+    <label style={{ marginLeft: "10px" }}>
+      <strong>View:</strong>
+    </label>
+
+    <select
+      value={applicationView}
+      onChange={(e) => setApplicationView(e.target.value)}
+      style={{
+        padding: "9px 12px",
+        borderRadius: "8px",
+        border: "1px solid #d1d5db"
+      }}
+    >
+      <option value="All">All</option>
+      <option value="Active">Active</option>
+      <option value="Completed">Completed</option>
+    </select>
+  </div>
+</div>
+
+              {/* ADD APPLICATION FORM */}
+              {showApplicationForm && (
+                <div className="coming-soon-card">
+                  <h2>Add New Application</h2>
+                  <p>Enter the details of the internship or job application.</p>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "14px",
+                      marginTop: "20px",
+                      textAlign: "left"
+                    }}
+                  >
+                    <input
+                      type="text"
+                      placeholder="Company Name"
+                      value={newApplication.company_name}
+                      onChange={(e) =>
+                        setNewApplication({
+                          ...newApplication,
+                          company_name: e.target.value
+                        })
+                      }
+                    />
+
+                    <input
+                      type="text"
+                      placeholder="Job / Internship Title"
+                      value={newApplication.job_title}
+                      onChange={(e) =>
+                        setNewApplication({
+                          ...newApplication,
+                          job_title: e.target.value
+                        })
+                      }
+                    />
+
+                    <textarea
+                      placeholder="Job Description"
+                      value={newApplication.job_description}
+                      onChange={(e) =>
+                        setNewApplication({
+                          ...newApplication,
+                          job_description: e.target.value
+                        })
+                      }
+                      rows="4"
+                    />
+
+                    <label>Application Date</label>
+                    <input
+                      type="date"
+                      value={newApplication.application_date}
+                      onChange={(e) =>
+                        setNewApplication({
+                          ...newApplication,
+                          application_date: e.target.value
+                        })
+                      }
+                    />
+
+                    <label>Application Deadline</label>
+                    <input
+                      type="date"
+                      value={newApplication.deadline}
+                      onChange={(e) =>
+                        setNewApplication({
+                          ...newApplication,
+                          deadline: e.target.value
+                        })
+                      }
+                    />
+
+                    <label>Application Status</label>
+                    <select
+                      value={newApplication.status}
+                      onChange={(e) =>
+                        setNewApplication({
+                          ...newApplication,
+                          status: e.target.value
+                        })
+                      }
+                    >
+                      <option value="Saved">Saved</option>
+                      <option value="Planning to apply">Planning to apply</option>
+                      <option value="Applied">Applied</option>
+                      <option value="Application under review">Application under review</option>
+                      <option value="Shortlisted">Shortlisted</option>
+                      <option value="Interview scheduled">Interview scheduled</option>
+                      <option value="Interview completed">Interview completed</option>
+                      <option value="Offer received">Offer received</option>
+                      <option value="Rejected">Rejected</option>
+                      <option value="Withdrawn">Withdrawn</option>
+                    </select>
+
+                    <label>Interview Date</label>
+                    <input
+                      type="date"
+                      value={newApplication.interview_date}
+                      onChange={(e) =>
+                        setNewApplication({
+                          ...newApplication,
+                          interview_date: e.target.value
+                        })
+                      }
+                    />
+
+                    <label>Interview Status</label>
+                    <select
+                      value={newApplication.interview_status}
+                      onChange={(e) =>
+                        setNewApplication({
+                          ...newApplication,
+                          interview_status: e.target.value
+                        })
+                      }
+                    >
+                      <option value="">Not scheduled</option>
+                      <option value="Scheduled">Scheduled</option>
+                      <option value="Completed">Completed</option>
+                      <option value="Cancelled">Cancelled</option>
+                    </select>
+
+                   <label>Resume</label>
+
+<select
+  value={newApplication.resume_id || ""}
+  onChange={(e) =>
+    setNewApplication({
+      ...newApplication,
+      resume_id: e.target.value || null
+    })
+  }
+>
+  <option value="">No resume selected</option>
+
+  {generatedResumeId && (
+    <option value={generatedResumeId}>
+      Current Generated Resume
+    </option>
+  )}
+</select>
+<label>Cover Letter</label>
+
+<select
+  value={newApplication.cover_letter_id || ""}
+  onChange={(e) =>
+    setNewApplication({
+      ...newApplication,
+      cover_letter_id: e.target.value || null
+    })
+  }
+>
+  <option value="">No cover letter selected</option>
+
+  {generatedCoverLetterId && (
+    <option value={generatedCoverLetterId}>
+      Current Generated Cover Letter
+    </option>
+  )}
+</select>
+                    <textarea
+                      placeholder="Notes / Follow-up"
+                      value={newApplication.notes}
+                      onChange={(e) =>
+                        setNewApplication({
+                          ...newApplication,
+                          notes: e.target.value
+                        })
+                      }
+                      rows="3"
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "12px",
+                      marginTop: "20px"
+                    }}
+                  >
+                    <button
+                      className="upload-button"
+                      onClick={addApplication}
+                      disabled={
+                        applicationLoading ||
+                        !newApplication.company_name.trim() ||
+                        !newApplication.job_title.trim()
+                      }
+                    >
+                      {applicationLoading ? "Adding..." : "Add Application"}
+                    </button>
+
+                    <button
+                      className="view-btn"
+                      onClick={() => setShowApplicationForm(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* APPLICATION LIST */}
+              {applicationLoading ? (
+                <div className="coming-soon-card">
+                  <div className="coming-icon">📋</div>
+                  <h2>Loading applications...</h2>
+                  <p>Fetching your application tracker data.</p>
+                </div>
+              ) : applications.length === 0 ? (
+                <div className="coming-soon-card">
+                  <div className="coming-icon">📋</div>
+                  <h2>No applications yet</h2>
+                  <p>
+                    Add an internship or job application to start tracking your applications.
+                  </p>
+                  <button
+                    className="upload-button"
+                    onClick={() => setShowApplicationForm(true)}
+                  >
+                    + Add Application
+                  </button>
+                </div>
+              ) : (
+                <div className="real-internship-list">
+                  {applications
+  .filter((application) => {
+    const search = applicationSearch.toLowerCase().trim();
+
+    const matchesSearch =
+      !search ||
+      application.company_name
+        ?.toLowerCase()
+        .includes(search) ||
+      application.job_title
+        ?.toLowerCase()
+        .includes(search);
+
+    const completedStatuses = [
+      "Offer received",
+      "Rejected",
+      "Withdrawn"
+    ];
+
+    const matchesView =
+      applicationView === "All" ||
+      (applicationView === "Completed" &&
+        completedStatuses.includes(application.status)) ||
+      (applicationView === "Active" &&
+        !completedStatuses.includes(application.status));
+
+    return matchesSearch && matchesView;
+  })
+  .map((application) => (
+                    <div
+                      className="real-internship-card"
+                      key={application.id}
+                    >
+                      <div className="internship-card-top">
+                        <div className="company-logo large">
+                          {application.company_name
+                            ? application.company_name.charAt(0).toUpperCase()
+                            : "C"}
+                        </div>
+
+                        <div className="internship-card-title">
+                          <h2>{application.job_title}</h2>
+                          <p>{application.company_name}</p>
+                        </div>
+                      </div>
+
+                      <div className="match-details">
+                        <div className="score-box">
+                          <span>Status</span>
+                          <strong>{application.status}</strong>
+                        </div>
+
+                        <div className="score-box">
+                          <span>Application Date</span>
+                          <strong>{application.application_date || "Not set"}</strong>
+                        </div>
+
+                        <div className="score-box">
+                          <span>Deadline</span>
+                          <strong>{application.deadline || "Not set"}</strong>
+                        </div>
+
+                        <div className="score-box">
+                          <span>Interview</span>
+                          <strong>
+  {application.interview_date
+    ? application.interview_date
+    : "Not scheduled"}
+</strong>
+
+{application.interview_status && (
+  <small
+    style={{
+      display: "block",
+      marginTop: "5px"
+    }}
+  >
+    {application.interview_status}
+  </small>
+)}
+                        </div>
+                      </div>
+
+                      {application.job_description && (
+                        <div className="reasoning-section">
+                          <h3>Job Description</h3>
+                          <p>{application.job_description}</p>
+                        </div>
+                      )}
+
+                      {application.notes && (
+                        <div className="reasoning-section">
+                          <h3>Notes / Follow-up</h3>
+                          <p>{application.notes}</p>
+                        </div>
+                      )}
+
+                      <div
+                        className="career-actions"
+                        style={{
+                          marginTop: "20px",
+                          paddingTop: "20px",
+                          borderTop: "1px solid #e5e7eb",
+                          display: "flex",
+                          gap: "12px",
+                          alignItems: "center",
+                          flexWrap: "wrap"
+                        }}
+                      >
+                        <input
+  type="date"
+  value={application.interview_date || ""}
+  onChange={(e) =>
+    updateApplication(application.id, {
+      interview_date: e.target.value
+    })
+  }
+  style={{
+    padding: "10px",
+    borderRadius: "8px",
+    border: "1px solid #d1d5db"
+  }}
+/>
+                        <select
+                          value={application.status}
+                          onChange={(e) =>
+                            updateApplication(application.id, {
+                              status: e.target.value
+                            })
+                          }
+                          style={{
+                            padding: "10px",
+                            borderRadius: "8px",
+                            border: "1px solid #d1d5db"
+                          }}
+                        >
+                          <option value="Saved">Saved</option>
+                          <option value="Planning to apply">Planning to apply</option>
+                          <option value="Applied">Applied</option>
+                          <option value="Application under review">Application under review</option>
+                          <option value="Shortlisted">Shortlisted</option>
+                          <option value="Interview scheduled">Interview scheduled</option>
+                          <option value="Interview completed">Interview completed</option>
+                          <option value="Offer received">Offer received</option>
+                          <option value="Rejected">Rejected</option>
+                          <option value="Withdrawn">Withdrawn</option>
+                        </select>
+
+                        <button
+                          className="view-btn"
+                          onClick={() =>
+                            updateApplication(application.id, {
+                              interview_status:
+                                application.interview_status === "Scheduled"
+                                  ? "Completed"
+                                  : "Scheduled"
+                            })
+                          }
+                        >
+                          {application.interview_status === "Scheduled"
+                            ? "✓ Interview Completed"
+                            : "📅 Mark Interview Scheduled"}
+                        </button>
+
+                        <button
+                          className="danger-button"
+                          onClick={() => deleteApplication(application.id)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
 
 
       case "AI Assistant":
@@ -4463,10 +5418,7 @@ const InterviewPrepPage = () => {
           </div>
 
         );
-
-
-
-      default:
+                  default:
 
         return <Dashboard />;
 

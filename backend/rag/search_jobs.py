@@ -122,10 +122,9 @@ def search_jobs(query, top_k=5):
 if __name__ == "__main__":
 
     query = (
-        "Python machine learning internship "
-        "with data science skills"
-    )
-
+    "Python machine learning internship "
+    "with data science skills"
+)
     print("\n===================================")
     print("SEMANTIC JOB SEARCH")
     print("===================================")

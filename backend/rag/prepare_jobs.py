@@ -77,7 +77,6 @@ def load_jobs():
 # =========================================================
 # CREATE JOB DOCUMENTS
 # =========================================================
-
 def create_job_documents(df):
 
     documents = []
@@ -88,32 +87,17 @@ def create_job_documents(df):
 Job Title:
 {row['job_title']}
 
-Company:
-{row['company']}
-
-Location:
-{row['location']}
-
-Description:
-{row['description']}
-
-Responsibilities:
-{row['responsibilities']}
-
 Required Skills:
 {row['required_skills']}
 
 Preferred Skills:
 {row['preferred_skills']}
 
+Responsibilities:
+{row['responsibilities']}
+
 Qualifications:
 {row['qualifications']}
-
-Experience:
-{row['experience']}
-
-Education:
-{row['education']}
 """.strip()
 
         documents.append({
@@ -145,6 +129,7 @@ Education:
         })
 
     return documents
+
 
 
 # =========================================================
