@@ -1,158 +1,143 @@
-import re
+import os
+from typing import List
+
+from dotenv import load_dotenv
+from pydantic import BaseModel, Field
+from google import genai
+from google.genai import types
 
 
-def extract_email(text: str):
-    match = re.search(
-        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
-        text
+# Load environment variables
+load_dotenv("backend/.env")
+
+
+# =========================================================
+# GEMINI CONFIGURATION
+# =========================================================
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY is not configured in backend/.env")
+
+client = genai.Client(api_key=GEMINI_API_KEY)
+
+
+# =========================================================
+# RESUME EXTRACTION SCHEMA
+# =========================================================
+
+class ResumeData(BaseModel):
+
+    name: str = Field(
+        description="Candidate's full name. Return an empty string if not present."
     )
-    return match.group(0) if match else None
 
-
-def extract_phone(text: str):
-    match = re.search(
-        r"(?:\+91[\s-]?)?[6-9]\d{9}",
-        text
+    email: str = Field(
+        description="Candidate's email address. Return an empty string if not present."
     )
-    return match.group(0) if match else None
+
+    phone: str = Field(
+        description="Candidate's phone number. Return an empty string if not present."
+    )
+
+    skills: List[str] = Field(
+        description="Technical and professional skills explicitly mentioned in the resume."
+    )
+
+    education: List[str] = Field(
+        description="Education qualifications explicitly mentioned in the resume."
+    )
+
+    experience: List[str] = Field(
+        description="Work experience, internships, or professional experience explicitly mentioned."
+    )
+
+    projects: List[str] = Field(
+        description="Projects explicitly mentioned in the resume."
+    )
+
+    certifications: List[str] = Field(
+        description="Certifications explicitly mentioned in the resume."
+    )
 
 
-def extract_name(text: str):
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-
-    if not lines:
-        return None
-
-    # Usually the candidate's name appears near the beginning.
-    for line in lines[:8]:
-        if (
-            len(line.split()) <= 5
-            and not any(char.isdigit() for char in line)
-            and "@" not in line
-            and not any(
-                word in line.lower()
-                for word in [
-                    "resume",
-                    "curriculum vitae",
-                    "linkedin",
-                    "github",
-                    "phone",
-                    "email"
-                ]
-            )
-        ):
-            return line
-
-    return lines[0]
-
-
-def extract_skills(text: str):
-    common_skills = [
-        "Python",
-        "Java",
-        "C",
-        "C++",
-        "JavaScript",
-        "HTML",
-        "CSS",
-        "React",
-        "Node.js",
-        "Express",
-        "MongoDB",
-        "MySQL",
-        "SQL",
-        "Git",
-        "GitHub",
-        "FastAPI",
-        "Flask",
-        "Django",
-        "Machine Learning",
-        "Deep Learning",
-        "Data Science",
-        "Artificial Intelligence",
-        "Power BI",
-        "Pandas",
-        "NumPy",
-        "TensorFlow",
-        "PyTorch",
-        "AWS"
-    ]
-
-    found_skills = []
-
-    text_lower = text.lower()
-
-    for skill in common_skills:
-        if skill.lower() in text_lower:
-            found_skills.append(skill)
-
-    return found_skills
-
-
-def extract_section(text: str, section_names):
-    lines = text.splitlines()
-
-    collected = []
-    collecting = False
-
-    for line in lines:
-        clean_line = line.strip()
-
-        if not clean_line:
-            continue
-
-        lower_line = clean_line.lower()
-
-        if any(
-            section.lower() in lower_line
-            for section in section_names
-        ):
-            collecting = True
-            continue
-
-        if collecting:
-            # Stop when another common resume section starts
-            if any(
-                section in lower_line
-                for section in [
-                    "education",
-                    "experience",
-                    "projects",
-                    "skills",
-                    "certifications",
-                    "achievements",
-                    "internships",
-                    "contact"
-                ]
-            ):
-                break
-
-            collected.append(clean_line)
-
-    return collected
-
+# =========================================================
+# GEMINI RESUME EXTRACTION
+# =========================================================
 
 def extract_resume_data(text: str):
 
-    return {
-        "name": extract_name(text),
-        "email": extract_email(text),
-        "phone": extract_phone(text),
-        "skills": extract_skills(text),
-        "education": extract_section(
-            text,
-            ["education", "academic background"]
-        ),
-        "experience": extract_section(
-            text,
-            ["experience", "work experience", "internship"]
-        ),
-        "projects": extract_section(
-            text,
-            ["projects", "academic projects"]
-        ),
-        "certifications": extract_section(
-            text,
-            ["certifications", "certificates"]
+    if not text or not text.strip():
+        return {
+            "name": "",
+            "email": "",
+            "phone": "",
+            "skills": [],
+            "education": [],
+            "experience": [],
+            "projects": [],
+            "certifications": []
+        }
+
+    prompt = f"""
+You are a resume information extraction system.
+
+Extract structured information from the resume text provided below.
+
+IMPORTANT RULES:
+
+1. Extract ONLY information explicitly present in the resume.
+2. NEVER invent, guess, or assume information.
+3. Do not add skills just because they are related to another skill.
+4. Do not create experience that is not explicitly mentioned.
+5. Do not create projects that are not explicitly mentioned.
+6. If a field is not present, return an empty string or empty list.
+7. Preserve the meaning of the original resume.
+8. Skills should contain skills explicitly mentioned in the resume.
+9. Education should contain the candidate's degrees, institutions, branches,
+   years, CGPA/percentage, or other explicitly stated education details.
+10. Experience should contain internships, jobs, or other professional experience.
+11. Projects should contain explicitly mentioned academic, personal, or professional projects.
+12. Certifications should contain explicitly mentioned certifications.
+13. Return only data that can be supported by the resume text.
+
+RESUME TEXT:
+--------------------
+{text}
+--------------------
+"""
+
+    try:
+
+        response = client.models.generate_content(
+            model="gemini-3.5-flash-lite",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=ResumeData
+            )
         )
-    }
+
+        parsed_data = response.parsed
+
+        if parsed_data is None:
+            parsed_data = ResumeData.model_validate_json(response.text)
+
+        return parsed_data.model_dump()
+
+    except Exception as e:
+
+        print("Gemini resume extraction failed:", e)
+
+        # Return a safe empty structure instead of crashing the upload process
+        return {
+            "name": "",
+            "email": "",
+            "phone": "",
+            "skills": [],
+            "education": [],
+            "experience": [],
+            "projects": [],
+            "certifications": []
+        }

@@ -31,18 +31,12 @@ def load_jobs():
 
     print("Raw jobs:", len(df))
 
-    # Remove empty rows
+    # Remove completely empty rows
     df = df.dropna(how="all")
 
-    # Remove duplicate job postings
+    # Remove duplicate job IDs
     df = df.drop_duplicates(
-        subset=[
-            "job_title",
-            "company",
-            "location",
-            "description",
-            "responsibilities"
-        ]
+        subset=["job_id"]
     )
 
     # Fill missing text values
@@ -60,6 +54,7 @@ def load_jobs():
     ]
 
     for column in text_columns:
+
         df[column] = (
             df[column]
             .fillna("")
@@ -75,7 +70,7 @@ def load_jobs():
 
 
 # =========================================================
-# CREATE JOB DOCUMENTS
+# CREATE JOB CHUNKS
 # =========================================================
 def create_job_documents(df):
 
@@ -83,24 +78,11 @@ def create_job_documents(df):
 
     for _, row in df.iterrows():
 
-        text = f"""
-Job Title:
-{row['job_title']}
+        # -------------------------------------------------
+        # Common metadata
+        # -------------------------------------------------
 
-Required Skills:
-{row['required_skills']}
-
-Preferred Skills:
-{row['preferred_skills']}
-
-Responsibilities:
-{row['responsibilities']}
-
-Qualifications:
-{row['qualifications']}
-""".strip()
-
-        documents.append({
+        common_metadata = {
 
             "job_id": row["job_id"],
 
@@ -122,14 +104,104 @@ Qualifications:
 
             "experience": row["experience"],
 
-            "education": row["education"],
+            "education": row["education"]
 
-            "text": text
+        }
 
-        })
+        # -------------------------------------------------
+        # Chunk 1: Overview
+        # -------------------------------------------------
+
+        overview_text = f"""
+Job Title:
+{row['job_title']}
+
+Company:
+{row['company']}
+
+Location:
+{row['location']}
+
+Description:
+{row['description']}
+""".strip()
+
+        overview_chunk = common_metadata.copy()
+
+        overview_chunk["chunk_type"] = "overview"
+        overview_chunk["text"] = overview_text
+
+        documents.append(overview_chunk)
+
+        # -------------------------------------------------
+        # Chunk 2: Skills
+        # -------------------------------------------------
+
+        skills_text = f"""
+Job Title:
+{row['job_title']}
+
+Required Skills:
+{row['required_skills']}
+
+Preferred Skills:
+{row['preferred_skills']}
+""".strip()
+
+        skills_chunk = common_metadata.copy()
+
+        skills_chunk["chunk_type"] = "skills"
+        skills_chunk["text"] = skills_text
+
+        documents.append(skills_chunk)
+
+        # -------------------------------------------------
+        # Chunk 3: Responsibilities
+        # -------------------------------------------------
+
+        responsibilities_text = f"""
+Job Title:
+{row['job_title']}
+
+Responsibilities:
+{row['responsibilities']}
+""".strip()
+
+        responsibilities_chunk = common_metadata.copy()
+
+        responsibilities_chunk["chunk_type"] = "responsibilities"
+        responsibilities_chunk["text"] = responsibilities_text
+
+        documents.append(responsibilities_chunk)
+
+        # -------------------------------------------------
+        # Chunk 4: Qualifications
+        # -------------------------------------------------
+
+        qualifications_text = f"""
+Job Title:
+{row['job_title']}
+
+Qualifications:
+{row['qualifications']}
+
+Experience:
+{row['experience']}
+
+Education:
+{row['education']}
+""".strip()
+
+        qualifications_chunk = common_metadata.copy()
+
+        qualifications_chunk["chunk_type"] = "qualifications"
+        qualifications_chunk["text"] = qualifications_text
+
+        documents.append(qualifications_chunk)
 
     return documents
 
+      
 
 
 # =========================================================
@@ -145,7 +217,7 @@ if __name__ == "__main__":
     )
 
     print("\n===================================")
-    print("JOB DATA PREPARATION")
+    print("JOB CHUNK PREPARATION")
     print("===================================")
 
     print(
@@ -154,11 +226,16 @@ if __name__ == "__main__":
     )
 
     print(
-        "Documents:",
+        "Total chunks:",
         len(documents)
     )
 
-    print("\nSample document:\n")
+    print(
+        "Chunks per job:",
+        len(documents) // len(jobs_df)
+    )
+
+    print("\nSample chunk:\n")
 
     print(
         documents[0]["text"]

@@ -1,0 +1,73 @@
+AI CAREER COMPANION AGENT
+M4 PERFORMANCE TEST RESULTS
+
+========================================
+1. RAG JOB RETRIEVAL
+========================================
+
+Test Queries:
+1. Python data science internship
+2. React frontend development internship
+3. Java backend Spring Boot internship
+
+Average Retrieval Time:
+119.46 ms
+
+
+========================================
+2. CAREER ASSISTANT
+========================================
+
+Number of Runs: 5
+
+Average Response Time:
+91.38 ms
+
+
+========================================
+3. APPLICATION TRACKER
+========================================
+
+Endpoint Tested:
+GET /applications/{student_id}
+
+Number of Runs: 5
+
+Average Response Time:
+88.47 ms
+
+
+========================================
+4. RESUME PROCESSING
+========================================
+
+Text Extraction Time:
+237.76 ms
+
+Total Resume Processing Time:
+2099.38 ms
+
+Approximately:
+2.10 seconds
+
+
+========================================
+SUMMARY
+========================================
+
+RAG Retrieval Average:
+119.46 ms
+
+Career Assistant Average:
+91.38 ms
+
+Application Tracker Average:
+88.47 ms
+
+Resume Processing:
+2.10 seconds
+
+Note:
+These measurements were obtained during local development
+testing and represent observed execution times in the
+development environment.

@@ -2,14 +2,9 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 
 from fastapi.middleware.cors import CORSMiddleware
 
-
-
 import os
-
 import shutil
-
 from backend.agents.job_resume_matcher import match_student_to_jobs
-
 from backend.agents.skill_gap_agent import analyze_skill_gap
 
 from backend.agents.resume_customization_agent import (
@@ -21,13 +16,15 @@ from backend.agents.resume_customization_agent import (
 )
 
 from backend.services.document_storage import save_document
+from backend.services.conversation_service import (
+    get_conversation,
+    add_message,
+    clear_conversation
+)
 
 from backend.agents.interview_agent import generate_interview_plan
 
 from backend.agents.career_assistant import answer_career_question
-
-
-
 from backend.database.mongodb import (
 
     test_connection,
@@ -35,8 +32,6 @@ from backend.database.mongodb import (
     students_collection
 
 )
-
-
 
 from backend.services.resume_parser import (
 
@@ -53,27 +48,20 @@ from backend.services.resume_extractor import (
 )
 
 
-
 from backend.rag.search_jobs import search_jobs
-
-
-
-
-
 app = FastAPI(
-
     title="AI Career Companion Agent",
-
     description="AI-powered internship matching and career assistance system",
-
     version="1.0.0"
-
 )
 
+from backend.models.conversation import ConversationMessage
 
+# =========================================================
+# CAREER ASSISTANT CONVERSATION MEMORY
+# =========================================================
 
-
-
+conversation_history = {}
 # =========================================================
 
 # CORS
@@ -1227,224 +1215,163 @@ def get_interview_prep(student_id: str, job_id: str):
 
         )
 
-# =========================================================
 
+
+# =========================================================
 # AI CAREER ASSISTANT
-
 # =========================================================
-
-
 
 @app.post("/career-assistant/{student_id}")
-
 def career_assistant(
-
     student_id: str,
-
     question: str
-
 ):
-
     from bson import ObjectId
-
-
 
     try:
 
-
-
         # -------------------------------------------------
-
         # Find student
-
         # -------------------------------------------------
-
-
 
         student = students_collection.find_one(
-
             {
-
                 "_id": ObjectId(student_id)
-
             }
-
         )
-
-
 
         if not student:
-
             raise HTTPException(
-
                 status_code=404,
-
                 detail="Student not found"
-
             )
 
-
-
+        # -------------------------------------------------
+        # Get previous conversation history
         # -------------------------------------------------
 
+        history = get_conversation(student_id)
+
+        # -------------------------------------------------
         # Create student text
-
         # -------------------------------------------------
-
-
 
         student_text = " ".join([
-
             str(student.get("name", "")),
-
             str(student.get("skills", "")),
-
             str(student.get("education", "")),
-
             str(student.get("experience", "")),
-
             str(student.get("projects", ""))
-
         ])
 
-
-
         # -------------------------------------------------
-
         # Retrieve internship matches
-
         # -------------------------------------------------
-
-
 
         retrieved_jobs = search_jobs(
-
             student_text,
-
             top_k=10
-
         )
 
-
-
         # -------------------------------------------------
-
         # Generate internship match results
-
         # -------------------------------------------------
-
-
 
         internship_matches = match_student_to_jobs(
-
             student,
-
             retrieved_jobs
-
         )
 
-
-
         # -------------------------------------------------
-
         # Generate skill-gap results
-
         # -------------------------------------------------
-
-
 
         skill_gap_results = []
 
-
-
         for job in retrieved_jobs:
 
-
-
             analysis = analyze_skill_gap(
-
                 student,
-
                 job
-
             )
-
-
 
             skill_gap_results.append(
-
                 analysis
-
             )
 
-
-
+        # -------------------------------------------------
+        # Save current user message
         # -------------------------------------------------
 
-        # Ask Career Assistant
-
-        # -------------------------------------------------
-
-
-
-        result = answer_career_question(
-
-            question=question,
-
-            student=student,
-
-            jobs=internship_matches,
-
-            skill_gap_results=skill_gap_results
-
+        add_message(
+            student_id=student_id,
+            role="user",
+            message=question
         )
 
-
-
+        # -------------------------------------------------
+        # Ask Career Assistant
         # -------------------------------------------------
 
+        result = answer_career_question(
+            question=question,
+            student=student,
+            jobs=internship_matches,
+            skill_gap_results=skill_gap_results,
+            conversation_history=history
+        )
+
+        # -------------------------------------------------
+        # Save assistant response
+        # -------------------------------------------------
+
+        add_message(
+            student_id=student_id,
+            role="assistant",
+            message=result["response"]
+        )
+
+        # -------------------------------------------------
+        # Get updated conversation
+        # -------------------------------------------------
+
+        updated_history = get_conversation(
+            student_id
+        )
+
+        # -------------------------------------------------
         # Return response
-
         # -------------------------------------------------
-
-
 
         return {
-
             "student_id": student_id,
-
             "question": question,
-
             "intent": result["intent"],
-
-            "response": result["response"]
-
+            "response": result["response"],
+            "conversation_history": [
+                {
+                    "role": message.role,
+                    "message": message.message,
+                    "timestamp": message.timestamp
+                }
+                for message in updated_history
+            ]
         }
 
-
-
     except HTTPException:
-
         raise
-
-
 
     except Exception as e:
 
         raise HTTPException(
-
             status_code=500,
-
             detail=str(e)
-
         )
 
-# ============================================================
 
+# =========================================================
 # M4 — APPLICATION TRACKING
-
-# ============================================================
-
+# =========================================================
 
 
 from backend.models.application import ApplicationCreate, ApplicationUpdate
@@ -1821,13 +1748,9 @@ def remove_application(
 
         }
 
-
-
     except HTTPException:
 
         raise
-
-
 
     except Exception as e:
 

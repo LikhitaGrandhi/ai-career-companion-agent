@@ -1,10 +1,15 @@
 import os
 import json
+
 import faiss
 import numpy as np
 
-from prepare_jobs import load_jobs, create_job_documents
-from embeddings import generate_embeddings
+from sentence_transformers import SentenceTransformer
+
+from prepare_jobs import (
+    load_jobs,
+    create_job_documents
+)
 
 
 # =========================================================
@@ -19,145 +24,191 @@ BASE_DIR = os.path.dirname(
     )
 )
 
-INDEX_DIR = os.path.join(
+VECTOR_STORE_DIR = os.path.join(
     BASE_DIR,
     "data",
     "vector_store"
 )
 
 INDEX_PATH = os.path.join(
-    INDEX_DIR,
+    VECTOR_STORE_DIR,
     "jobs.index"
 )
 
 METADATA_PATH = os.path.join(
-    INDEX_DIR,
+    VECTOR_STORE_DIR,
     "jobs_metadata.json"
 )
 
 
 # =========================================================
-# BUILD VECTOR STORE
+# CREATE VECTOR STORE DIRECTORY
 # =========================================================
 
-def build_vector_store():
-
-    print("\n===================================")
-    print("BUILDING VECTOR STORE")
-    print("===================================")
-
-    # Load cleaned jobs
-    jobs_df = load_jobs()
-
-    # Create documents
-    documents = create_job_documents(jobs_df)
-
-    print("\nDocuments created:", len(documents))
-
-    # Generate embeddings
-    print("\nGenerating embeddings...")
-
-    embeddings = generate_embeddings(documents)
-
-    embeddings = np.asarray(
-        embeddings,
-        dtype="float32"
-    )
-
-    # Normalize vectors
-    faiss.normalize_L2(embeddings)
-
-    # Embedding dimension
-    dimension = embeddings.shape[1]
-
-    # Create FAISS index
-    index = faiss.IndexFlatIP(
-        dimension
-    )
-
-    # Add embeddings
-    index.add(embeddings)
-
-    # Create directory
-    os.makedirs(
-        INDEX_DIR,
-        exist_ok=True
-    )
-
-    # Save FAISS index
-    faiss.write_index(
-        index,
-        INDEX_PATH
-    )
-
-    # -----------------------------------------------------
-    # SAVE METADATA
-    # -----------------------------------------------------
-
-    metadata = []
-
-    for document in documents:
-
-        metadata.append({
-            "job_id": document["job_id"],
-            "job_title": document["job_title"],
-            "company": document["company"],
-            "location": document["location"],
-            "description": document["description"],
-            "responsibilities": document["responsibilities"],
-            "required_skills": document["required_skills"],
-            "preferred_skills": document["preferred_skills"],
-            "qualifications": document["qualifications"],
-            "experience": document["experience"],
-            "education": document["education"],
-            "text": document["text"]
-        })
-
-    with open(
-        METADATA_PATH,
-        "w",
-        encoding="utf-8"
-    ) as file:
-
-        json.dump(
-            metadata,
-            file,
-            indent=4
-        )
-
-    # -----------------------------------------------------
-    # RESULT
-    # -----------------------------------------------------
-
-    print("\n===================================")
-    print("VECTOR STORE CREATED SUCCESSFULLY")
-    print("===================================")
-
-    print(
-        "Total jobs indexed:",
-        index.ntotal
-    )
-
-    print(
-        "Vector dimensions:",
-        dimension
-    )
-
-    print(
-        "\nFAISS index:",
-        INDEX_PATH
-    )
-
-    print(
-        "Metadata:",
-        METADATA_PATH
-    )
+os.makedirs(
+    VECTOR_STORE_DIR,
+    exist_ok=True
+)
 
 
 # =========================================================
-# MAIN
+# LOAD EMBEDDING MODEL
 # =========================================================
 
-if __name__ == "__main__":
+model = SentenceTransformer(
+    "all-MiniLM-L6-v2"
+)
 
-    build_vector_store()
+
+# =========================================================
+# LOAD JOB DATA
+# =========================================================
+
+jobs_df = load_jobs()
+
+
+# =========================================================
+# CREATE MEANINGFUL JOB CHUNKS
+# =========================================================
+
+documents = create_job_documents(
+    jobs_df
+)
+
+print("\n===================================")
+print("BUILDING VECTOR STORE")
+print("===================================")
+
+print(
+    "Total jobs:",
+    len(jobs_df)
+)
+
+print(
+    "Total chunks:",
+    len(documents)
+)
+
+
+# =========================================================
+# PREPARE TEXT FOR EMBEDDING
+# =========================================================
+
+texts = [
+    document["text"]
+    for document in documents
+]
+
+
+# =========================================================
+# GENERATE EMBEDDINGS
+# =========================================================
+
+print("\nGenerating embeddings...")
+
+embeddings = model.encode(
+    texts,
+    convert_to_numpy=True,
+    show_progress_bar=True
+)
+
+
+# =========================================================
+# CONVERT TO FLOAT32
+# =========================================================
+
+embeddings = np.asarray(
+    embeddings,
+    dtype="float32"
+)
+
+
+# =========================================================
+# NORMALIZE EMBEDDINGS
+# =========================================================
+
+faiss.normalize_L2(
+    embeddings
+)
+
+
+# =========================================================
+# CREATE FAISS INDEX
+# =========================================================
+
+dimension = embeddings.shape[1]
+
+index = faiss.IndexFlatIP(
+    dimension
+)
+
+
+# =========================================================
+# ADD EMBEDDINGS
+# =========================================================
+
+index.add(
+    embeddings
+)
+
+
+# =========================================================
+# SAVE FAISS INDEX
+# =========================================================
+
+faiss.write_index(
+    index,
+    INDEX_PATH
+)
+
+
+# =========================================================
+# SAVE METADATA
+# =========================================================
+
+with open(
+    METADATA_PATH,
+    "w",
+    encoding="utf-8"
+) as file:
+
+    json.dump(
+        documents,
+        file,
+        indent=2,
+        ensure_ascii=False
+    )
+
+
+# =========================================================
+# FINAL OUTPUT
+# =========================================================
+
+print("\n===================================")
+print("VECTOR STORE CREATED SUCCESSFULLY")
+print("===================================")
+
+print(
+    "Total jobs:",
+    len(jobs_df)
+)
+
+print(
+    "Total chunks indexed:",
+    index.ntotal
+)
+
+print(
+    "Vector dimensions:",
+    dimension
+)
+
+print(
+    "\nFAISS index:",
+    INDEX_PATH
+)
+
+print(
+    "Metadata:",
+    METADATA_PATH
+)

@@ -1,359 +1,527 @@
-# ============================================================
-# CAREER ASSISTANT AGENT
-# ============================================================
+# =========================================================
+# AI CAREER ASSISTANT
+# =========================================================
 
 def detect_intent(question):
     """
-    Detect the user's career-related question intent.
+    Detect the main intent of the user's question.
     """
 
-    question = question.lower().strip()
+    question_lower = question.lower()
 
-    # Skill gap questions
-    skill_gap_keywords = [
-    "skill gap",
-    "skill gaps",
-    "skill am i missing",
-    "skills am i missing",
-    "skill am i lacking",
-    "skills am i lacking",
-    "missing skill",
-    "missing skills",
-    "what skill",
-    "what skills",
-    "which skill",
-    "which skills",
-    "skills should i learn",
-    "skill should i learn",
-    "skills do i need",
-    "skill do i need",
-    "improve my skills",
-    "improve my skill"
-]
-
-    if any(keyword in question for keyword in skill_gap_keywords):
+    # Skill gap
+    if any(word in question_lower for word in [
+        "skill gap",
+        "missing skill",
+        "missing skills",
+        "skills am i missing",
+        "what skills do i need",
+        "skills should i learn",
+        "improve my skills"
+    ]):
         return "skill_gap"
 
-    # Internship questions
-    internship_keywords = [
+    # Internship
+    if any(word in question_lower for word in [
         "internship",
         "internships",
         "job",
         "jobs",
-        "role",
-        "roles",
         "opportunities",
-        "opportunity",
-        "company",
-        "companies"
-    ]
-
-    if any(keyword in question for keyword in internship_keywords):
+        "which role",
+        "which roles"
+    ]):
         return "internship"
 
-    # Resume questions
-    resume_keywords = [
+    # Resume
+    if any(word in question_lower for word in [
         "resume",
         "cv",
-        "curriculum vitae",
-        "resume score",
-        "resume improve",
-        "improve my resume"
-    ]
-
-    if any(keyword in question for keyword in resume_keywords):
+        "curriculum vitae"
+    ]):
         return "resume"
 
-    # Interview questions
-    interview_keywords = [
+    # Interview
+    if any(word in question_lower for word in [
         "interview",
-        "interview questions",
-        "prepare for interview",
+        "interviews",
         "interview preparation",
-        "technical questions",
-        "hr questions",
-        "behavioral questions"
-    ]
-
-    if any(keyword in question for keyword in interview_keywords):
+        "prepare for interview",
+        "prepare me"
+    ]):
         return "interview"
 
     # Cover letter
-    cover_letter_keywords = [
+    if any(word in question_lower for word in [
         "cover letter",
-        "application letter",
-        "write a letter"
-    ]
-
-    if any(keyword in question for keyword in cover_letter_keywords):
+        "coverletter"
+    ]):
         return "cover_letter"
 
+    # General career question
     return "general"
 
 
-# ============================================================
-# GENERAL RESPONSE
-# ============================================================
+# =========================================================
+# CONVERSATION CONTEXT
+# =========================================================
 
-def generate_general_response(student):
-    name = student.get("name", "there")
+def get_recent_context(conversation_history):
+    """
+    Convert previous conversation messages into
+    a simple text context.
+    """
 
-    return (
-        f"Hi {name}! 👋 I am your AI Career Assistant. "
-        "I can help you with internship matching, skill gaps, "
-        "resume improvement, cover letters and interview preparation. "
-        "Try asking something like: "
-        "\"What skills am I missing?\", "
-        "\"Which internships match my profile?\", or "
-        "\"How should I prepare for an interview?\""
+    if not conversation_history:
+        return ""
+
+    recent_messages = conversation_history[-6:]
+
+    context_lines = []
+
+    for message in recent_messages:
+
+        if hasattr(message, "role"):
+            role = message.role
+            text = message.message
+        else:
+            role = message.get("role", "")
+            text = message.get("message", "")
+
+        context_lines.append(
+            f"{role}: {text}"
+        )
+
+    return "\n".join(context_lines)
+
+
+def is_follow_up_question(question):
+    """
+    Detect questions that depend on previous conversation.
+    """
+
+    question_lower = question.lower().strip()
+
+    follow_up_phrases = [
+        "what about it",
+        "what about that",
+        "how about it",
+        "how about that",
+        "tell me more",
+        "explain more",
+        "what should i do",
+        "what should i learn",
+        "how can i improve",
+        "how do i improve",
+        "how should i prepare",
+        "what about the first one",
+        "what about the second one",
+        "the first one",
+        "the second one",
+        "that internship",
+        "that role",
+        "that job",
+        "this internship",
+        "this role",
+        "this job",
+        "for it",
+        "for that"
+    ]
+
+    return any(
+        phrase in question_lower
+        for phrase in follow_up_phrases
     )
 
 
-# ============================================================
+# =========================================================
 # INTERNSHIP RESPONSE
-# ============================================================
+# =========================================================
 
 def generate_internship_response(jobs):
+
     if not jobs:
         return (
-            "I couldn't find internship matches for your profile "
-            "right now. Try adding more relevant skills, projects "
-            "or experience to your profile."
+            "I could not find suitable internship matches "
+            "from your current profile."
         )
 
-    top_jobs = jobs[:5]
+    response = "Based on your profile, here are some relevant internship matches:\n\n"
 
-    response = "Here are some internship opportunities matching your profile:\n\n"
+    for index, job in enumerate(jobs[:5], start=1):
 
-    for index, job in enumerate(top_jobs, start=1):
-        title = job.get("job_title", "Internship")
-        company = job.get("company", "Company")
-        location = job.get("location", "Location")
-        score = job.get("match_score")
+        title = job.get(
+            "job_title",
+            job.get("title", "Unknown Role")
+        )
 
-        if score is not None:
-            response += (
-                f"{index}. {title} — {company} "
-                f"({location}) — Match: {score}%\n"
-            )
-        else:
-            response += (
-                f"{index}. {title} — {company} "
-                f"({location})\n"
-            )
+        company = job.get(
+            "company",
+            "Unknown Company"
+        )
+
+        location = job.get(
+            "location",
+            "Location not specified"
+        )
+
+        score = job.get(
+            "match_score",
+            job.get("similarity_score", 0)
+        )
+
+        response += (
+            f"{index}. {title} - {company}\n"
+            f"   Location: {location}\n"
+            f"   Match Score: {round(float(score), 2)}\n\n"
+        )
+
+    response += (
+        "You can ask me about the skills required for any "
+        "of these internships."
+    )
 
     return response
 
 
-# ============================================================
+# =========================================================
 # SKILL GAP RESPONSE
-# ============================================================
+# =========================================================
 
 def generate_skill_gap_response(skill_gap_results):
+
     if not skill_gap_results:
         return (
-            "I couldn't calculate your current skill gaps. "
-            "Please make sure your student profile contains "
-            "your skills and that internship data is available."
+            "I could not generate a skill-gap analysis "
+            "for your current profile."
         )
 
-    missing_required = set()
-    missing_preferred = set()
+    response = (
+        "Here is the skill-gap analysis based on the "
+        "available internship roles:\n\n"
+    )
 
-    for result in skill_gap_results:
-        required_gaps = result.get(
+    for index, result in enumerate(
+        skill_gap_results[:5],
+        start=1
+    ):
+
+        job_title = result.get(
+            "job_title",
+            result.get("title", "Internship Role")
+        )
+
+        company = result.get(
+            "company",
+            ""
+        )
+
+        missing_skills = result.get(
+            "missing_skills",
+            []
+        )
+
+        critical_gaps = result.get(
             "critical_gaps",
-            result.get("missing_required_skills", [])
+            []
         )
 
         preferred_gaps = result.get(
             "preferred_gaps",
-            result.get("missing_preferred_skills", [])
+            []
         )
 
-        if isinstance(required_gaps, list):
-            missing_required.update(required_gaps)
-
-        if isinstance(preferred_gaps, list):
-            missing_preferred.update(preferred_gaps)
-
-    response = "Based on your internship matches, here is your skill-gap summary:\n\n"
-
-    if missing_required:
-        response += "🔴 Important skills to improve:\n"
-
-        for skill in sorted(missing_required):
-            response += f"• {skill}\n"
-
-        response += "\n"
-
-    if missing_preferred:
-        response += "🟡 Preferred skills you could strengthen:\n"
-
-        for skill in sorted(missing_preferred):
-            response += f"• {skill}\n"
-
-        response += "\n"
-
-    if not missing_required and not missing_preferred:
         response += (
-            "🎉 No major skill gaps were identified "
-            "for the analyzed internship roles.\n\n"
+            f"{index}. {job_title}"
         )
+
+        if company:
+            response += f" - {company}"
+
+        response += "\n"
+
+        if missing_skills:
+            response += (
+                f"   Missing skills: "
+                f"{', '.join(map(str, missing_skills))}\n"
+            )
+        else:
+            response += (
+                "   Missing skills: No major missing skills identified.\n"
+            )
+
+        if critical_gaps:
+            response += (
+                f"   Critical gaps: "
+                f"{', '.join(map(str, critical_gaps))}\n"
+            )
+
+        if preferred_gaps:
+            response += (
+                f"   Preferred gaps: "
+                f"{', '.join(map(str, preferred_gaps))}\n"
+            )
+
+        response += "\n"
 
     response += (
-        "Recommended approach:\n"
-        "• Learn one high-priority missing skill at a time.\n"
-        "• Build a small project using the skill.\n"
-        "• Add the project to your resume after completing it.\n"
-        "• Practice interview questions related to the skill."
+        "Focus first on the critical skills, then work on "
+        "preferred skills through projects and practice."
     )
 
     return response
 
 
-# ============================================================
+# =========================================================
 # RESUME RESPONSE
-# ============================================================
+# =========================================================
 
 def generate_resume_response(student):
-    skills = student.get("skills", [])
-    projects = student.get("projects", [])
-    education = student.get("education", [])
 
-    response = "Here is what I can see from your current profile:\n\n"
+    skills = student.get(
+        "skills",
+        []
+    )
+
+    projects = student.get(
+        "projects",
+        []
+    )
+
+    response = (
+        "Your resume should clearly highlight your education, "
+        "technical skills, projects, experience and certifications.\n\n"
+    )
 
     if skills:
-        response += "📌 Skills:\n"
-
-        if isinstance(skills, list):
-            for skill in skills:
-                response += f"• {skill}\n"
-        else:
-            response += f"• {skills}\n"
-
-        response += "\n"
+        response += (
+            "Your current technical skills include: "
+            f"{', '.join(map(str, skills))}\n\n"
+        )
 
     if projects:
-        response += "📂 Projects:\n"
-
-        if isinstance(projects, list):
-            for project in projects:
-                response += f"• {project}\n"
-        else:
-            response += f"• {projects}\n"
-
-        response += "\n"
-
-    if education:
-        response += "🎓 Education:\n"
-
-        if isinstance(education, list):
-            for item in education:
-                response += f"• {item}\n"
-        else:
-            response += f"• {education}\n"
-
-        response += "\n"
+        response += (
+            "Your projects should include measurable details "
+            "such as technologies used, features implemented "
+            "and your contribution.\n\n"
+        )
 
     response += (
-        "For internship applications, make sure your resume "
-        "clearly highlights relevant skills, projects, education "
-        "and measurable achievements."
+        "For an internship-focused resume, keep the content "
+        "relevant to the role and avoid adding skills or "
+        "achievements that are not actually present in your profile."
     )
 
     return response
 
 
-# ============================================================
+# =========================================================
 # INTERVIEW RESPONSE
-# ============================================================
+# =========================================================
 
 def generate_interview_response():
+
     return (
-        "For internship interviews, prepare in these areas:\n\n"
-        "🎯 Technical\n"
-        "• Programming fundamentals\n"
-        "• Data structures and algorithms\n"
-        "• Skills mentioned in the internship description\n\n"
-        "📂 Projects\n"
-        "• Problem your project solved\n"
-        "• Technologies used\n"
-        "• Your individual contribution\n"
-        "• Challenges and solutions\n\n"
-        "👤 HR / Behavioral\n"
-        "• Tell me about yourself\n"
-        "• Your strengths and weaknesses\n"
-        "• Why this internship?\n"
-        "• Career goals\n\n"
-        "Practice explaining your projects clearly and concisely."
+        "For internship interview preparation, focus on four areas:\n\n"
+        "1. Technical fundamentals related to the role.\n"
+        "2. Questions based on your projects.\n"
+        "3. Problem-solving and coding practice.\n"
+        "4. HR questions such as introduction, strengths, "
+        "career goals and project experience.\n\n"
+        "You should also be able to clearly explain every "
+        "technology and project mentioned in your resume."
     )
 
 
-# ============================================================
+# =========================================================
 # COVER LETTER RESPONSE
-# ============================================================
+# =========================================================
 
-def generate_cover_letter_response():
+def generate_cover_letter_response(student):
+
+    name = student.get(
+        "name",
+        "the candidate"
+    )
+
     return (
-        "Your cover letter should contain:\n\n"
-        "1. A short introduction.\n"
-        "2. The internship role you are applying for.\n"
-        "3. Relevant technical skills.\n"
-        "4. Relevant academic projects or experience.\n"
-        "5. Why you are interested in the role.\n"
-        "6. A short closing statement.\n\n"
-        "Keep it concise and customize it for each internship."
+        f"A cover letter for {name} should briefly explain "
+        "your interest in the internship, relevant technical "
+        "skills, projects or experience, and why your background "
+        "matches the role.\n\n"
+        "Keep it specific to the internship and avoid adding "
+        "experiences or achievements that are not present in "
+        "your profile."
     )
 
 
-# ============================================================
-# MAIN CAREER ASSISTANT FUNCTION
-# ============================================================
+# =========================================================
+# GENERAL RESPONSE
+# =========================================================
+
+def generate_general_response(
+    question,
+    student,
+    conversation_history=None
+):
+
+    context = get_recent_context(
+        conversation_history
+    )
+
+    # -----------------------------------------------------
+    # Context-aware follow-up
+    # -----------------------------------------------------
+
+    if context and is_follow_up_question(question):
+
+        return (
+            "Based on our previous conversation, "
+            "your question is related to the career "
+            "information we discussed earlier.\n\n"
+            f"Your current question is: {question}\n\n"
+            "You can continue by asking me specifically "
+            "about the internship, skills, resume, "
+            "cover letter or interview preparation."
+        )
+
+    # -----------------------------------------------------
+    # General career response
+    # -----------------------------------------------------
+
+    return (
+        "I can help you with:\n\n"
+        "• Internship matching\n"
+        "• Skill-gap analysis\n"
+        "• Resume improvement\n"
+        "• Cover letters\n"
+        "• Interview preparation\n"
+        "• Career planning\n\n"
+        "Ask me a specific question about your career "
+        "or internship preparation."
+    )
+
+
+# =========================================================
+# MAIN CAREER ASSISTANT
+# =========================================================
 
 def answer_career_question(
     question,
     student,
     jobs=None,
-    skill_gap_results=None
+    skill_gap_results=None,
+    conversation_history=None
 ):
-    """
-    Main Career Assistant function.
 
-    Parameters:
-        question: User's career question
-        student: Student profile from MongoDB
-        jobs: Internship matching results
-        skill_gap_results: Skill gap analysis results
+    if jobs is None:
+        jobs = []
 
-    Returns:
-        Dictionary containing detected intent and response.
-    """
+    if skill_gap_results is None:
+        skill_gap_results = []
 
-    jobs = jobs or []
-    skill_gap_results = skill_gap_results or []
+    if conversation_history is None:
+        conversation_history = []
+
+    # -----------------------------------------------------
+    # Detect intent
+    # -----------------------------------------------------
 
     intent = detect_intent(question)
 
+    # -----------------------------------------------------
+    # Context-aware follow-up
+    # -----------------------------------------------------
+
+    if is_follow_up_question(question):
+
+        previous_context = get_recent_context(
+            conversation_history
+        )
+
+        if previous_context:
+
+            question_lower = question.lower()
+
+            # Follow-up about skills
+            if any(word in question_lower for word in [
+                "skill",
+                "skills",
+                "learn",
+                "improve"
+            ]):
+
+                intent = "skill_gap"
+
+            # Follow-up about interview
+            elif any(word in question_lower for word in [
+                "prepare",
+                "preparation",
+                "interview"
+            ]):
+
+                intent = "interview"
+
+            # Follow-up about resume
+            elif any(word in question_lower for word in [
+                "resume",
+                "cv"
+            ]):
+
+                intent = "resume"
+
+            # Follow-up about internship/job
+            elif any(word in question_lower for word in [
+                "internship",
+                "role",
+                "job"
+            ]):
+
+                intent = "internship"
+
+    # -----------------------------------------------------
+    # Generate response
+    # -----------------------------------------------------
+
     if intent == "internship":
-        response = generate_internship_response(jobs)
+
+        response = generate_internship_response(
+            jobs
+        )
 
     elif intent == "skill_gap":
+
         response = generate_skill_gap_response(
             skill_gap_results
         )
 
     elif intent == "resume":
-        response = generate_resume_response(student)
+
+        response = generate_resume_response(
+            student
+        )
 
     elif intent == "interview":
+
         response = generate_interview_response()
 
     elif intent == "cover_letter":
-        response = generate_cover_letter_response()
+
+        response = generate_cover_letter_response(
+            student
+        )
 
     else:
-        response = generate_general_response(student)
+
+        response = generate_general_response(
+            question=question,
+            student=student,
+            conversation_history=conversation_history
+        )
+
+    # -----------------------------------------------------
+    # Return result
+    # -----------------------------------------------------
 
     return {
         "intent": intent,

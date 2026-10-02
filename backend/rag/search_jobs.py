@@ -71,13 +71,15 @@ with open(
 
 def search_jobs(query, top_k=5):
 
+    # -----------------------------------------------------
     # Convert query into embedding
+    # -----------------------------------------------------
+
     query_embedding = model.encode(
         [query],
         convert_to_numpy=True
     )
 
-    # Convert to float32
     query_embedding = np.asarray(
         query_embedding,
         dtype="float32"
@@ -88,13 +90,25 @@ def search_jobs(query, top_k=5):
         query_embedding
     )
 
-    # Search FAISS
-    scores, indices = index.search(
-        query_embedding,
-        top_k
+    # -----------------------------------------------------
+    # Retrieve many chunks
+    # -----------------------------------------------------
+
+    candidate_k = min(
+        top_k * 20,
+        index.ntotal
     )
 
-    results = []
+    scores, indices = index.search(
+        query_embedding,
+        candidate_k
+    )
+
+    # -----------------------------------------------------
+    # Group chunks by actual job posting
+    # -----------------------------------------------------
+
+    job_results = {}
 
     for score, idx in zip(
         scores[0],
@@ -104,15 +118,66 @@ def search_jobs(query, top_k=5):
         if idx == -1:
             continue
 
-        job = metadata[idx].copy()
+        chunk = metadata[idx]
 
-        job["similarity_score"] = float(
-            score
+        similarity_score = float(score)
+
+        # -------------------------------------------------
+        # Use title + company + location to identify
+        # the displayed internship posting
+        # -------------------------------------------------
+
+        job_key = (
+            chunk["job_title"].strip().lower(),
+            chunk["company"].strip().lower(),
+            chunk["location"].strip().lower()
         )
 
-        results.append(job)
+        # -------------------------------------------------
+        # First occurrence of this job
+        # -------------------------------------------------
 
-    return results
+        if job_key not in job_results:
+
+            job = chunk.copy()
+
+            job["similarity_score"] = similarity_score
+
+            job["matched_chunk"] = chunk["chunk_type"]
+
+            job_results[job_key] = job
+
+        # -------------------------------------------------
+        # Keep the strongest matching chunk
+        # -------------------------------------------------
+
+        elif similarity_score > job_results[job_key][
+            "similarity_score"
+        ]:
+
+            job_results[job_key][
+                "similarity_score"
+            ] = similarity_score
+
+            job_results[job_key][
+                "matched_chunk"
+            ] = chunk["chunk_type"]
+
+    # -----------------------------------------------------
+    # Sort by similarity
+    # -----------------------------------------------------
+
+    sorted_jobs = sorted(
+        job_results.values(),
+        key=lambda job: job["similarity_score"],
+        reverse=True
+    )
+
+    # -----------------------------------------------------
+    # Return top unique jobs
+    # -----------------------------------------------------
+
+    return sorted_jobs[:top_k]
 
 
 # ---------------------------------------------------------
@@ -122,9 +187,10 @@ def search_jobs(query, top_k=5):
 if __name__ == "__main__":
 
     query = (
-    "Python machine learning internship "
-    "with data science skills"
-)
+        "Python machine learning internship "
+        "with data science skills"
+    )
+
     print("\n===================================")
     print("SEMANTIC JOB SEARCH")
     print("===================================")
@@ -132,7 +198,7 @@ if __name__ == "__main__":
     print("\nSearch Query:")
     print(query)
 
-    print("\nTotal jobs in vector store:")
+    print("\nTotal chunks in vector store:")
     print(index.ntotal)
 
     print("\nTop Matching Internships:\n")
@@ -162,6 +228,11 @@ if __name__ == "__main__":
         print(
             f"   Similarity Score: "
             f"{job['similarity_score']:.4f}"
+        )
+
+        print(
+            f"   Matched Chunk: "
+            f"{job['matched_chunk']}"
         )
 
         print(

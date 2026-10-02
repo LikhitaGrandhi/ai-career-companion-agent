@@ -1,15 +1,47 @@
-from pypdf import PdfReader
+import fitz  # PyMuPDF
+import pytesseract
+from PIL import Image
+from io import BytesIO
 
 
-def extract_text_from_pdf(file_path: str) -> str:
-    reader = PdfReader(file_path)
+# Tesseract is installed here on Windows
+pytesseract.pytesseract.tesseract_cmd = (
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+)
 
-    text = ""
 
-    for page in reader.pages:
-        page_text = page.extract_text()
+def extract_text_from_pdf(file_path):
 
-        if page_text:
-            text += page_text + "\n"
+    doc = fitz.open(file_path)
 
-    return text.strip()
+    extracted_text = []
+
+    for page in doc:
+
+        # -------------------------------------------------
+        # 1. Try normal PDF text extraction first
+        # -------------------------------------------------
+        text = page.get_text("text").strip()
+
+        if text:
+            extracted_text.append(text)
+
+        # -------------------------------------------------
+        # 2. If the page has little/no text, use OCR
+        # -------------------------------------------------
+        else:
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+
+            image_bytes = pix.tobytes("png")
+
+            image = Image.open(BytesIO(image_bytes))
+
+            ocr_text = pytesseract.image_to_string(
+                image,
+                lang="eng"
+            )
+
+            if ocr_text.strip():
+                extracted_text.append(ocr_text)
+
+    return "\n".join(extracted_text)

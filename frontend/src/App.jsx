@@ -33,6 +33,14 @@ function App() {
 
   );
 
+  // =========================================================
+  // PROFILE STATES
+  // =========================================================
+
+  const [studentProfile, setStudentProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState("");
+
 
 
   // =========================================================
@@ -438,6 +446,47 @@ const [applicationDashboard, setApplicationDashboard] = useState({
   };
 
 
+
+  // =========================================================
+  // LOAD STUDENT PROFILE
+  // =========================================================
+
+  const loadStudentProfile = async () => {
+    setProfileLoading(true);
+    setProfileError("");
+
+    try {
+      const id = await loadStudentId();
+      const response = await fetch(`${API_URL}/students`);
+
+      if (!response.ok) {
+        throw new Error("Unable to load student profiles.");
+      }
+
+      const students = await response.json();
+      const profile = (students || []).find(
+        (student) => student._id === id
+      );
+
+      if (!profile) {
+        throw new Error("Student profile not found.");
+      }
+
+      setStudentProfile(profile);
+    } catch (error) {
+      console.error("Profile loading error:", error);
+      setProfileError(error.message || "Unable to load your profile.");
+      setStudentProfile(null);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activePage === "My Profile") {
+      loadStudentProfile();
+    }
+  }, [activePage]);
 
   // =========================================================
 
@@ -4421,6 +4470,290 @@ const InterviewPrepPage = () => {
 
   // =========================================================
 
+  // =========================================================
+  // MY PROFILE PAGE
+  // =========================================================
+
+  const ProfilePage = () => {
+    const cleanText = (value) => {
+      if (!value) return "";
+
+      return String(value)
+        .replace(/◦/g, "")
+        .replace(/T ech/g, "Tech")
+        .replace(/W ebsite/g, "Website")
+        .replace(/F or W omen/g, "for Women")
+        .replace(/Artifical/g, "Artificial")
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+
+    const formatList = (value) => {
+      if (Array.isArray(value)) {
+        return value
+          .filter(Boolean)
+          .map((item) => cleanText(item))
+          .filter(Boolean);
+      }
+
+      if (typeof value === "string" && value.trim()) {
+        return value
+          .split(/[,;|]/)
+          .map((item) => cleanText(item))
+          .filter(Boolean);
+      }
+
+      return [];
+    };
+
+    const skills = formatList(studentProfile?.skills);
+    const education = formatList(studentProfile?.education);
+    const experience = formatList(studentProfile?.experience);
+    const projects = formatList(studentProfile?.projects);
+    const certifications = formatList(studentProfile?.certifications);
+
+    const pageHeader = (
+      <div className="page-heading">
+        <div>
+          <p className="small-label">CAREERAI MODULE</p>
+          <h1>👤 My Profile</h1>
+          <p>
+            View your personal information, education, skills and career
+            profile.
+          </p>
+        </div>
+      </div>
+    );
+
+    if (profileLoading) {
+      return (
+        <div className="page-container">
+          {pageHeader}
+
+          <div className="coming-soon-card">
+            <div className="coming-icon">👤</div>
+            <h2>Loading Profile...</h2>
+            <p>Fetching your profile information from CareerAI.</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (profileError) {
+      return (
+        <div className="page-container">
+          {pageHeader}
+
+          <div className="coming-soon-card">
+            <div className="coming-icon">⚠️</div>
+            <h2>Unable to load profile</h2>
+            <p>{profileError}</p>
+
+            <button
+              className="upload-button"
+              onClick={loadStudentProfile}
+              style={{ marginTop: "15px" }}
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (!studentProfile) {
+      return (
+        <div className="page-container">
+          {pageHeader}
+
+          <div className="coming-soon-card">
+            <div className="coming-icon">📄</div>
+            <h2>No Profile Found</h2>
+            <p>
+              Upload your resume first to create your student profile.
+            </p>
+
+            <button
+              className="upload-button"
+              onClick={() => setActivePage("Resume")}
+              style={{ marginTop: "15px" }}
+            >
+              Go to Resume
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    const renderList = (items, emptyText) => {
+      if (items.length === 0) {
+        return <p>{emptyText}</p>;
+      }
+
+      return (
+        <div style={{ marginTop: "15px" }}>
+          {items.map((item, index) => (
+            <div
+              key={index}
+              style={{
+                padding: "12px 15px",
+                marginBottom: "10px",
+                borderRadius: "10px",
+                background: "#f8fafc",
+                border: "1px solid #e5e7eb",
+                lineHeight: 1.6
+              }}
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+      );
+    };
+
+    return (
+      <div className="page-container">
+        {pageHeader}
+
+        {/* PERSONAL INFORMATION */}
+        <div
+          className="result-card"
+          style={{
+            marginBottom: "20px"
+          }}
+        >
+          <p className="small-label">PERSONAL INFORMATION</p>
+
+          <h2 style={{ margin: "8px 0 18px", fontSize: "26px" }}>
+            {cleanText(studentProfile.name) || "Name not provided"}
+          </h2>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gap: "12px"
+            }}
+          >
+            <p style={{ margin: 0 }}>
+              <strong>Email:</strong>{" "}
+              {studentProfile.email || "Not provided"}
+            </p>
+
+            <p style={{ margin: 0 }}>
+              <strong>Phone:</strong>{" "}
+              {studentProfile.phone || "Not provided"}
+            </p>
+          </div>
+        </div>
+
+        {/* PROFILE ID */}
+        <div
+          className="result-card"
+          style={{
+            marginBottom: "20px"
+          }}
+        >
+          <p className="small-label">PROFILE ID</p>
+
+          <p
+            style={{
+              marginTop: "8px",
+              wordBreak: "break-all",
+              fontFamily: "monospace"
+            }}
+          >
+            {studentProfile._id || "Not available"}
+          </p>
+        </div>
+
+        {/* EDUCATION */}
+        <div
+          className="result-card"
+          style={{
+            marginBottom: "20px"
+          }}
+        >
+          <h2>🎓 Education</h2>
+          {renderList(education, "No education details available.")}
+        </div>
+
+        {/* SKILLS */}
+        <div
+          className="result-card"
+          style={{
+            marginBottom: "20px"
+          }}
+        >
+          <h2>💻 Skills</h2>
+
+          {skills.length > 0 ? (
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "10px",
+                marginTop: "16px"
+              }}
+            >
+              {skills.map((skill, index) => (
+                <span
+                  key={index}
+                  style={{
+                    display: "inline-block",
+                    padding: "9px 15px",
+                    borderRadius: "20px",
+                    background: "#eef2ff",
+                    border: "1px solid #dbe3ff",
+                    fontSize: "14px",
+                    fontWeight: "600"
+                  }}
+                >
+                  {skill}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p>No skills available.</p>
+          )}
+        </div>
+
+        {/* EXPERIENCE */}
+        <div
+          className="result-card"
+          style={{
+            marginBottom: "20px"
+          }}
+        >
+          <h2>💼 Experience</h2>
+          {renderList(experience, "No experience details available.")}
+        </div>
+
+        {/* PROJECTS */}
+        <div
+          className="result-card"
+          style={{
+            marginBottom: "20px"
+          }}
+        >
+          <h2>🚀 Projects</h2>
+          {renderList(projects, "No project details available.")}
+        </div>
+
+        {/* CERTIFICATIONS */}
+        <div
+          className="result-card"
+          style={{
+            marginBottom: "20px"
+          }}
+        >
+          <h2>🏆 Certifications</h2>
+          {renderList(certifications, "No certifications available.")}
+        </div>
+      </div>
+    );
+  };
+
   const PlaceholderPage = ({
 
     title,
@@ -4474,13 +4807,7 @@ const InterviewPrepPage = () => {
             {icon}
 
           </div>
-
-
-
           <h2>{title}</h2>
-
-
-
           <p>
 
             This module is ready to be
@@ -4532,20 +4859,7 @@ const InterviewPrepPage = () => {
 
 
       case "My Profile":
-
-        return (
-
-          <PlaceholderPage
-
-            title="My Profile"
-
-            icon="👤"
-
-            description="Manage your personal information, education, skills and career preferences."
-
-          />
-
-        );
+        return <ProfilePage />;
 
 
 
@@ -5612,42 +5926,20 @@ const InterviewPrepPage = () => {
 
             </div>
 
-
-
             <div className="profile-avatar">
-
               LG
-
             </div>
-
-
-
             <div className="profile-name">
-
               <strong>
-
                 Likhita
-
               </strong>
-
-
-
               <span>
-
                 Student
-
               </span>
-
             </div>
-
           </div>
-
         </header>
-
-
-
         {/* PAGE */}
-
         <section className="content-area">
 
           {renderPage()}
@@ -5661,7 +5953,4 @@ const InterviewPrepPage = () => {
   );
 
 }
-
-
-
 export default App;
