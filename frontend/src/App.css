@@ -48,9 +48,19 @@ button {
   left: 0;
   top: 0;
   bottom: 0;
+  height: 100vh;
+  overflow-y: auto;
+  box-sizing: border-box;
   z-index: 10;
+
+  /* Hide scrollbar */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
+.sidebar::-webkit-scrollbar {
+  display: none;
+}
 .logo-section {
   display: flex;
   align-items: center;
@@ -1526,4 +1536,23 @@ button {
   .page-container .real-internship-card {
     padding: 18px;
   }
+}
+.logout-button {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: white;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.logout-button:hover {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fecaca;
 }

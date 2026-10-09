@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 
 import "./App.css";
+import Landing from "./pages/Landing";
+import Auth from "./pages/Auth";
 
 
 
@@ -11,6 +13,10 @@ const API_URL = "http://127.0.0.1:8000";
 function App() {
 
   const [activePage, setActivePage] = useState("Dashboard");
+const [showLanding, setShowLanding] = useState(
+  !localStorage.getItem("user_id")
+);  
+  const [showAuth, setShowAuth] = useState(false);
 
 
 
@@ -32,7 +38,6 @@ function App() {
     localStorage.getItem("student_id") || ""
 
   );
-
   // =========================================================
   // PROFILE STATES
   // =========================================================
@@ -40,8 +45,6 @@ function App() {
   const [studentProfile, setStudentProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
-
-
 
   // =========================================================
 
@@ -240,8 +243,14 @@ const [applicationDashboard, setApplicationDashboard] = useState({
 
 
     const formData = new FormData();
+    const userId = localStorage.getItem("user_id");
 
-    formData.append("file", selectedFile);
+if (!userId) {
+  throw new Error("Please log in before uploading your resume.");
+}
+
+formData.append("user_id", userId);
+formData.append("file", selectedFile);
 
 
 
@@ -356,94 +365,20 @@ const [applicationDashboard, setApplicationDashboard] = useState({
   // GET STUDENT ID
 
   // =========================================================
+  
+const loadStudentId = async () => {
+  const savedStudentId = localStorage.getItem("student_id");
 
-  const loadStudentId = async () => {
+  if (savedStudentId) {
+    setStudentId(savedStudentId);
+    return savedStudentId;
+  }
 
-    if (studentId) {
+  throw new Error(
+    "No student profile found. Please upload your resume first."
+  );
+};
 
-      return studentId;
-
-    }
-
-
-
-    try {
-
-      const response = await fetch(`${API_URL}/students`);
-
-
-
-      if (!response.ok) {
-
-        throw new Error("Unable to fetch students.");
-
-      }
-
-
-
-      const students = await response.json();
-
-
-
-      if (!students || students.length === 0) {
-
-        throw new Error(
-
-          "No student profile found. Please upload your resume first."
-
-        );
-
-      }
-
-
-
-      const latestStudent =
-
-        students[students.length - 1];
-
-
-
-      if (!latestStudent._id) {
-
-        throw new Error("Student ID not found.");
-
-      }
-
-
-
-      setStudentId(latestStudent._id);
-
-
-
-      localStorage.setItem(
-
-        "student_id",
-
-        latestStudent._id
-
-      );
-
-
-
-      return latestStudent._id;
-
-    } catch (error) {
-
-      console.error(
-
-        "Student loading error:",
-
-        error
-
-      );
-
-
-
-      throw error;
-
-    }
-
-  };
 
 
 
@@ -451,41 +386,38 @@ const [applicationDashboard, setApplicationDashboard] = useState({
   // LOAD STUDENT PROFILE
   // =========================================================
 
-  const loadStudentProfile = async () => {
-    setProfileLoading(true);
-    setProfileError("");
+const loadStudentProfile = async () => {
+  setProfileLoading(true);
+  setProfileError("");
 
-    try {
-      const id = await loadStudentId();
-      const response = await fetch(`${API_URL}/students`);
+  try {
+    const id = await loadStudentId();
 
-      if (!response.ok) {
-        throw new Error("Unable to load student profiles.");
-      }
+    const response = await fetch(`${API_URL}/students/${id}`);
 
-      const students = await response.json();
-      const profile = (students || []).find(
-        (student) => student._id === id
-      );
-
-      if (!profile) {
-        throw new Error("Student profile not found.");
-      }
-
-      setStudentProfile(profile);
-    } catch (error) {
-      console.error("Profile loading error:", error);
-      setProfileError(error.message || "Unable to load your profile.");
-      setStudentProfile(null);
-    } finally {
-      setProfileLoading(false);
+    if (!response.ok) {
+      throw new Error("Unable to load your student profile.");
     }
-  };
+
+    const profile = await response.json();
+
+    setStudentProfile(profile);
+  } catch (error) {
+    console.error("Profile loading error:", error);
+    setProfileError(error.message || "Unable to load your profile.");
+    setStudentProfile(null);
+  } finally {
+    setProfileLoading(false);
+  }
+};
+
+
+   
 
   useEffect(() => {
     if (activePage === "My Profile") {
       loadStudentProfile();
-    }
+    } 
   }, [activePage]);
 
   // =========================================================
@@ -531,37 +463,19 @@ const [applicationDashboard, setApplicationDashboard] = useState({
         );
 
       }
-
-
-
       setInternshipMatches(
-
         data.matches || []
-
       );
-
     } catch (error) {
-
       console.error(
-
         "Internship loading error:",
-
         error
-
       );
-
-
-
       setInternshipError(
-
         error.message ||
-
           "Unable to load internship matches."
 
       );
-
-
-
       setInternshipMatches([]);
 
     } finally {
@@ -569,11 +483,7 @@ const [applicationDashboard, setApplicationDashboard] = useState({
       setInternshipLoading(false);
 
     }
-
   };
-
-
-
   // =========================================================
 
   // LOAD SKILL GAP ANALYSIS
@@ -2372,7 +2282,7 @@ const deleteApplication = async (applicationId) => {
 
             <p className="small-label">
 
-              M2 JOB MATCHING AGENT
+               JOB MATCHING AGENT
 
             </p>
 
@@ -3129,7 +3039,7 @@ const deleteApplication = async (applicationId) => {
 
                                 <p className="small-label">
 
-                                  M3 RESUME CUSTOMIZATION
+                                RESUME CUSTOMIZATION
 
                                 </p>
 
@@ -3351,7 +3261,7 @@ const deleteApplication = async (applicationId) => {
 
                                 <p className="small-label">
 
-                                  M3 COVER LETTER AGENT
+                                   COVER LETTER AGENT
 
                                 </p>
 
@@ -3435,7 +3345,8 @@ const deleteApplication = async (applicationId) => {
 
             <p className="small-label">
 
-              M3 SKILL GAP AGENT
+            
+               SKILL GAP AGENT
 
             </p>
 
@@ -4124,7 +4035,7 @@ const InterviewPrepPage = () => {
       <div className="page-heading">
         <div>
           <p className="small-label">
-            M3 INTERVIEW PREPARATION AGENT
+             INTERVIEW PREPARATION AGENT
           </p>
 
           <h1>
@@ -4275,7 +4186,7 @@ const InterviewPrepPage = () => {
 
                 <div>
                   <p className="small-label">
-                    M3 INTERVIEW AGENT
+                     INTERVIEW AGENT
                   </p>
 
                   <h2>
@@ -4808,15 +4719,7 @@ const InterviewPrepPage = () => {
 
           </div>
           <h2>{title}</h2>
-          <p>
-
-            This module is ready to be
-
-            connected to your M2 and M3
-
-            backend agents.
-
-          </p>
+         
 
 
 
@@ -4884,7 +4787,7 @@ const InterviewPrepPage = () => {
             <div className="page-heading">
               <div>
                 <p className="small-label">
-                  M4 APPLICATION TRACKER
+                   APPLICATION TRACKER
                 </p>
                 <h1>Application Tracker</h1>
                 <p>
@@ -5549,7 +5452,7 @@ const InterviewPrepPage = () => {
               <div>
 
                 <p className="small-label">
-                  M3 AI CAREER ASSISTANT
+                   AI CAREER ASSISTANT
                 </p>
 
                 <h1>
@@ -5741,55 +5644,53 @@ const InterviewPrepPage = () => {
   };
 
 
-
   // =========================================================
 
   // MAIN UI
 
   // =========================================================
-
+if (showLanding) {
   return (
+    <Landing
+      onGetStarted={() => {
+        setShowLanding(false);
+        setShowAuth(true);
+      }}
+    />
+  );
+}
 
+if (showAuth) {
+  return (
+    <Auth
+      onLogin={() => {
+        setShowAuth(false);
+      }}
+    />
+  );
+}
+  return (
     <div className="app">
-
-
-
       {/* SIDEBAR */}
 
       <aside className="sidebar">
+       <div className="logo-section">
+  <div className="logo-icon">
+    🎓
+    
+  </div>
 
-        <div className="logo-section">
-
-          <div className="logo-icon">
-
-            ✨
-
-          </div>
-
-
-
-          <div>
-
-            <h2>CareerAI</h2>
-
-
-
-            <span>
-
-              Career Companion
-
-            </span>
-
-          </div>
-
-        </div>
-
-
-
+  <div className="logo-text">
+    <h2>
+      CareerAI
+    </h2>
+    <span className="logo-tagline">
+      Your AI Career Companion
+    </span>
+  </div>
+</div>
         <nav className="sidebar-nav">
-
           <p className="nav-label">
-
             MENU
 
           </p>
@@ -5852,54 +5753,37 @@ const InterviewPrepPage = () => {
 
             </div>
 
-
-
             <div>
-
               <strong>
-
                 AI Career Coach
-
               </strong>
-
-
-
               <p>
-
                 Ready to help you grow.
-
               </p>
-
             </div>
-
           </div>
-
+          <button
+            className="logout-button"
+            onClick={() => {
+              localStorage.removeItem("user_id");
+              localStorage.removeItem("user_name");
+              window.location.reload();
+            }}
+          >
+            🚪 Logout
+          </button>
         </div>
-
       </aside>
-
-
-
       {/* MAIN AREA */}
-
       <main className="main-content">
-
-
-
         {/* TOP BAR */}
-
         <header className="topbar">
-
           <div>
-
             <span className="breadcrumb">
 
               CareerAI
 
             </span>
-
-
-
             <span className="breadcrumb-separator">
 
               /
@@ -5925,18 +5809,23 @@ const InterviewPrepPage = () => {
               🔔
 
             </div>
-
             <div className="profile-avatar">
-              LG
-            </div>
-            <div className="profile-name">
-              <strong>
-                Likhita
-              </strong>
-              <span>
-                Student
-              </span>
-            </div>
+  {(localStorage.getItem("user_name") || "User")
+    .split(" ")
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2)}
+</div>
+
+<div className="profile-name">
+  <strong>
+    {localStorage.getItem("user_name") || "User"}
+  </strong>
+  <span>
+    Student
+  </span>
+</div>
           </div>
         </header>
         {/* PAGE */}
