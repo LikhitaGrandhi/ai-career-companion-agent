@@ -1,11 +1,38 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 
 from fastapi.middleware.cors import CORSMiddleware
 
 import os
+
 import shutil
+
+from backend.models.auth import (
+
+    SignupRequest,
+
+    SignupResponse,
+
+    LoginRequest,
+
+    LoginResponse
+
+)
+
+from bson import ObjectId
+
+from backend.services.auth_service import (
+
+    create_user,
+
+    login_user
+
+)
+
 from backend.agents.job_resume_matcher import match_student_to_jobs
+
 from backend.agents.skill_gap_agent import analyze_skill_gap
+
+from backend.models.conversation import ConversationMessage
 
 from backend.agents.resume_customization_agent import (
 
@@ -16,22 +43,32 @@ from backend.agents.resume_customization_agent import (
 )
 
 from backend.services.document_storage import save_document
+
 from backend.services.conversation_service import (
+
     get_conversation,
+
     add_message,
+
     clear_conversation
+
 )
 
 from backend.agents.interview_agent import generate_interview_plan
 
 from backend.agents.career_assistant import answer_career_question
+
 from backend.database.mongodb import (
 
     test_connection,
 
-    students_collection
+    students_collection,
+
+    db
 
 )
+
+users_collection = db["users"]
 
 from backend.services.resume_parser import (
 
@@ -39,36 +76,105 @@ from backend.services.resume_parser import (
 
 )
 
-
-
 from backend.services.resume_extractor import (
 
     extract_resume_data
 
 )
 
-
 from backend.rag.search_jobs import search_jobs
+
 app = FastAPI(
+
     title="AI Career Companion Agent",
+
     description="AI-powered internship matching and career assistance system",
+
     version="1.0.0"
+
 )
+
+@app.post("/auth/login", response_model=LoginResponse)
+
+def login(user: LoginRequest):
+
+    logged_in_user = login_user(
+
+        user.email,
+
+        user.password
+
+    )
+
+    if logged_in_user is None:
+
+        raise HTTPException(
+
+            status_code=401,
+
+            detail="Invalid email or password"
+
+        )
+
+    return {
+
+        "message": "Login successful",
+
+        "user_id": logged_in_user["user_id"],
+
+        "name": logged_in_user["name"],
+
+        "student_id": logged_in_user.get("student_id")
+
+    }
+
+@app.post("/auth/signup", response_model=SignupResponse)
+
+def signup(user: SignupRequest):
+
+    user_id = create_user(
+
+        user.name,
+
+        user.email,
+
+        user.password
+
+    )
+
+    if user_id is None:
+
+        raise HTTPException(
+
+            status_code=400,
+
+            detail="Email already registered"
+
+        )
+
+    return {
+
+        "message": "Account created successfully",
+
+        "user_id": user_id
+
+    }
 
 from backend.models.conversation import ConversationMessage
 
 # =========================================================
+
 # CAREER ASSISTANT CONVERSATION MEMORY
+
 # =========================================================
 
 conversation_history = {}
+
 # =========================================================
 
 # CORS
 
 # =========================================================
-
-
 
 app.add_middleware(
 
@@ -88,17 +194,11 @@ app.add_middleware(
 
 )
 
-
-
-
-
 # =========================================================
 
 # MONGODB CONNECTION TEST
 
 # =========================================================
-
-
 
 @app.on_event("startup")
 
@@ -106,17 +206,11 @@ def startup_event():
 
     test_connection()
 
-
-
-
-
 # =========================================================
 
 # HOME
 
 # =========================================================
-
-
 
 @app.get("/")
 
@@ -128,17 +222,11 @@ def root():
 
     }
 
-
-
-
-
 # =========================================================
 
 # HEALTH CHECK
 
 # =========================================================
-
-
 
 @app.get("/health")
 
@@ -150,47 +238,69 @@ def health():
 
     }
 
-
-
-
-
 # =========================================================
 
 # GET ALL STUDENT PROFILES
 
 # =========================================================
 
-
-
 @app.get("/students")
 
 def get_students():
 
-
-
-    students = list(
-
-        students_collection.find()
-
-    )
-
-
+    students = list(students_collection.find())
 
     for student in students:
 
-        student["_id"] = str(
-
-            student["_id"]
-
-        )
-
-
+        student["_id"] = str(student["_id"])
 
     return students
 
+# =========================================================
 
+# GET ONE STUDENT PROFILE BY ID
 
+# =========================================================
 
+@app.get("/students/{student_id}")
+
+def get_student_by_id(student_id: str):
+
+    try:
+
+        student = students_collection.find_one(
+
+            {"_id": ObjectId(student_id)}
+
+        )
+
+        if student is None:
+
+            raise HTTPException(
+
+                status_code=404,
+
+                detail="Student profile not found"
+
+            )
+
+        student["_id"] = str(student["_id"])
+
+        return student
+
+    except HTTPException:
+
+        raise
+
+    except Exception:
+
+        raise HTTPException(
+
+            status_code=400,
+
+            detail="Invalid student ID"
+
+        )
 
 # =========================================================
 
@@ -198,21 +308,19 @@ def get_students():
 
 # =========================================================
 
-
-
 @app.post("/resume/upload")
 
 async def upload_resume(
+
+    user_id: str = Form(...),
 
     file: UploadFile = File(...)
 
 ):
 
-
-
     # Check PDF
 
-    if not file.filename.lower().endswith(".pdf"):
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
 
         raise HTTPException(
 
@@ -222,218 +330,115 @@ async def upload_resume(
 
         )
 
+    # Validate user ID
 
+    try:
+
+        user_object_id = ObjectId(user_id)
+
+    except Exception:
+
+        raise HTTPException(
+
+            status_code=400,
+
+            detail="Invalid user ID"
+
+        )
+
+    user = users_collection.find_one({"_id": user_object_id})
+
+    if user is None:
+
+        raise HTTPException(
+
+            status_code=404,
+
+            detail="User account not found"
+
+        )
 
     # Create uploads folder
 
     upload_dir = "uploads"
 
-
-
-    os.makedirs(
-
-        upload_dir,
-
-        exist_ok=True
-
-    )
-
-
+    os.makedirs(upload_dir, exist_ok=True)
 
     # Save PDF
 
-    file_path = os.path.join(
+    file_path = os.path.join(upload_dir, file.filename)
 
-        upload_dir,
+    with open(file_path, "wb") as buffer:
 
-        file.filename
-
-    )
-
-
-
-    with open(
-
-        file_path,
-
-        "wb"
-
-    ) as buffer:
-
-
-
-        shutil.copyfileobj(
-
-            file.file,
-
-            buffer
-
-        )
-
-
-
-    # -----------------------------------------------------
+        shutil.copyfileobj(file.file, buffer)
 
     # Step 1: Extract raw text
 
-    # -----------------------------------------------------
-
-
-
-    extracted_text = extract_text_from_pdf(
-
-        file_path
-
-    )
-
-
-
-    # -----------------------------------------------------
+    extracted_text = extract_text_from_pdf(file_path)
 
     # Step 2: Extract structured resume data
 
-    # -----------------------------------------------------
+    extracted_data = extract_resume_data(extracted_text)
 
-
-
-    extracted_data = extract_resume_data(
-
-        extracted_text
-
-    )
-
-
-
-    # -----------------------------------------------------
-
-    # Step 3: Save extracted data to MongoDB
-
-    # -----------------------------------------------------
-
-
+    # Step 3: Build student profile
 
     student_document = {
 
+        "user_id": user_id,
+
         "resume_filename": file.filename,
 
+        "name": extracted_data.get("name"),
 
+        "email": extracted_data.get("email"),
 
-        "name": extracted_data.get(
+        "phone": extracted_data.get("phone"),
 
-            "name"
+        "skills": extracted_data.get("skills", []),
 
-        ),
+        "education": extracted_data.get("education", []),
 
+        "experience": extracted_data.get("experience", []),
 
+        "projects": extracted_data.get("projects", []),
 
-        "email": extracted_data.get(
-
-            "email"
-
-        ),
-
-
-
-        "phone": extracted_data.get(
-
-            "phone"
-
-        ),
-
-
-
-        "skills": extracted_data.get(
-
-            "skills",
-
-            []
-
-        ),
-
-
-
-        "education": extracted_data.get(
-
-            "education",
-
-            []
-
-        ),
-
-
-
-        "experience": extracted_data.get(
-
-            "experience",
-
-            []
-
-        ),
-
-
-
-        "projects": extracted_data.get(
-
-            "projects",
-
-            []
-
-        ),
-
-
-
-        "certifications": extracted_data.get(
-
-            "certifications",
-
-            []
-
-        )
+        "certifications": extracted_data.get("certifications", [])
 
     }
 
+    # Save student profile
 
+    result = students_collection.insert_one(student_document)
 
-    result = students_collection.insert_one(
+    student_id = str(result.inserted_id)
 
-        student_document
+    # Link profile to user account
+
+    users_collection.update_one(
+
+        {"_id": user_object_id},
+
+        {"$set": {"student_id": student_id}}
 
     )
-
-
 
     return {
 
         "message": "Resume uploaded, parsed and saved successfully",
 
-
-
-        "student_id": str(
-
-            result.inserted_id
-
-        ),
-
-
+        "student_id": student_id,
 
         "filename": file.filename,
-
-
 
         "extracted_data": extracted_data
 
     }
 
-
-
-
-
 # =========================================================
 
-# INTERNSHIP MATCHING
+# UPLOAD, PARSE AND SAVE RESUME
 
 # =========================================================
-
 
 
 @app.get("/internships/{student_id}")
@@ -444,23 +449,15 @@ def get_internship_matches(
 
 ):
 
-
-
     from bson import ObjectId
 
-
-
     try:
-
-
 
         # -------------------------------------------------
 
         # Find student
 
         # -------------------------------------------------
-
-
 
         student = students_collection.find_one(
 
@@ -476,8 +473,6 @@ def get_internship_matches(
 
         )
 
-
-
         if not student:
 
             raise HTTPException(
@@ -488,15 +483,11 @@ def get_internship_matches(
 
             )
 
-
-
         # -------------------------------------------------
 
         # Create student text
 
         # -------------------------------------------------
-
-
 
         student_text = " ".join([
 
@@ -512,8 +503,6 @@ def get_internship_matches(
 
             ),
 
-
-
             str(
 
                 student.get(
@@ -525,8 +514,6 @@ def get_internship_matches(
                 )
 
             ),
-
-
 
             str(
 
@@ -540,8 +527,6 @@ def get_internship_matches(
 
             ),
 
-
-
             str(
 
                 student.get(
@@ -553,8 +538,6 @@ def get_internship_matches(
                 )
 
             ),
-
-
 
             str(
 
@@ -570,15 +553,11 @@ def get_internship_matches(
 
         ])
 
-
-
         # -------------------------------------------------
 
         # Retrieve relevant jobs from FAISS
 
         # -------------------------------------------------
-
-
 
         retrieved_jobs = search_jobs(
 
@@ -588,15 +567,11 @@ def get_internship_matches(
 
         )
 
-
-
         # -------------------------------------------------
 
         # Match jobs with student
 
         # -------------------------------------------------
-
-
 
         matches = match_student_to_jobs(
 
@@ -606,13 +581,9 @@ def get_internship_matches(
 
         )
 
-
-
         return {
 
             "student_id": student_id,
-
-
 
             "total_matches": len(
 
@@ -620,23 +591,15 @@ def get_internship_matches(
 
             ),
 
-
-
             "matches": matches
 
         }
-
-
 
     except HTTPException:
 
         raise
 
-
-
     except Exception as e:
-
-
 
         raise HTTPException(
 
@@ -646,17 +609,11 @@ def get_internship_matches(
 
         )
 
-
-
-
-
 # =========================================================
 
 # SKILL GAP ANALYSIS
 
 # =========================================================
-
-
 
 @app.get("/skill-gap/{student_id}")
 
@@ -666,23 +623,15 @@ def get_skill_gap(
 
 ):
 
-
-
     from bson import ObjectId
 
-
-
     try:
-
-
 
         # -------------------------------------------------
 
         # Find student
 
         # -------------------------------------------------
-
-
 
         student = students_collection.find_one(
 
@@ -698,11 +647,7 @@ def get_skill_gap(
 
         )
 
-
-
         if not student:
-
-
 
             raise HTTPException(
 
@@ -712,15 +657,11 @@ def get_skill_gap(
 
             )
 
-
-
         # -------------------------------------------------
 
         # Create student text for semantic search
 
         # -------------------------------------------------
-
-
 
         student_text = " ".join([
 
@@ -736,8 +677,6 @@ def get_skill_gap(
 
             ),
 
-
-
             str(
 
                 student.get(
@@ -749,8 +688,6 @@ def get_skill_gap(
                 )
 
             ),
-
-
 
             str(
 
@@ -764,8 +701,6 @@ def get_skill_gap(
 
             ),
 
-
-
             str(
 
                 student.get(
@@ -777,8 +712,6 @@ def get_skill_gap(
                 )
 
             ),
-
-
 
             str(
 
@@ -794,15 +727,11 @@ def get_skill_gap(
 
         ])
 
-
-
         # -------------------------------------------------
 
         # Retrieve relevant internships
 
         # -------------------------------------------------
-
-
 
         retrieved_jobs = search_jobs(
 
@@ -812,23 +741,15 @@ def get_skill_gap(
 
         )
 
-
-
         # -------------------------------------------------
 
         # Analyze skill gaps
 
         # -------------------------------------------------
 
-
-
         skill_gap_results = []
 
-
-
         for job in retrieved_jobs:
-
-
 
             analysis = analyze_skill_gap(
 
@@ -837,8 +758,6 @@ def get_skill_gap(
                 job
 
             )
-
-
 
             # Add semantic similarity
 
@@ -860,15 +779,11 @@ def get_skill_gap(
 
             )
 
-
-
             skill_gap_results.append(
 
                 analysis
 
             )
-
-
 
         # -------------------------------------------------
 
@@ -876,13 +791,9 @@ def get_skill_gap(
 
         # -------------------------------------------------
 
-
-
         return {
 
             "student_id": student_id,
-
-
 
             "total_jobs_analyzed": len(
 
@@ -890,23 +801,15 @@ def get_skill_gap(
 
             ),
 
-
-
             "results": skill_gap_results
 
         }
-
-
 
     except HTTPException:
 
         raise
 
-
-
     except Exception as e:
-
-
 
         raise HTTPException(
 
@@ -921,177 +824,282 @@ def get_skill_gap(
 # RESUME CUSTOMIZATION
 
 @app.post("/resume/customize")
+
 def customize_student_resume(
+
     student_id: str,
+
     job_id: str
+
 ):
+
     from bson import ObjectId
 
     try:
+
         # Find student
+
         student = students_collection.find_one(
+
             {
+
                 "_id": ObjectId(student_id)
+
             }
+
         )
 
         if not student:
+
             raise HTTPException(
+
                 status_code=404,
+
                 detail="Student not found"
+
             )
 
         # Search internship jobs
+
         student_text = " ".join([
+
             str(student.get("name", "")),
+
             str(student.get("skills", "")),
+
             str(student.get("education", "")),
+
             str(student.get("experience", "")),
+
             str(student.get("projects", ""))
+
         ])
 
         jobs = search_jobs(
+
             student_text,
+
             top_k=60
+
         )
 
         # Find requested job
+
         selected_job = None
 
         for job in jobs:
+
             if job.get("job_id") == job_id:
+
                 selected_job = job
+
                 break
 
         if not selected_job:
+
             raise HTTPException(
+
                 status_code=404,
+
                 detail="Internship job not found"
+
             )
 
         # Generate customized resume
+
         customized_resume = customize_resume(
+
             student,
+
             selected_job
+
         )
 
         # Save generated resume
+
         resume_id = save_document(
+
             student_id=student_id,
+
             document_type="resume",
+
             job_id=job_id,
+
             content=customized_resume
+
         )
 
         return {
+
             "student_id": student_id,
+
             "job_id": job_id,
+
             "resume_id": resume_id,
+
             "customized_resume": customized_resume
+
         }
 
     except HTTPException:
+
         raise
 
     except Exception as e:
+
         raise HTTPException(
+
             status_code=500,
+
             detail=str(e)
+
         )
 
-
 # =========================================================
+
 # COVER LETTER GENERATION
+
 # =========================================================
 
 @app.post("/cover-letter/generate")
+
 def generate_cover_letter_endpoint(
+
     student_id: str,
+
     job_id: str
+
 ):
+
     from bson import ObjectId
 
     try:
+
         # Find student
+
         student = students_collection.find_one(
+
             {
+
                 "_id": ObjectId(student_id)
+
             }
+
         )
 
         if not student:
+
             raise HTTPException(
+
                 status_code=404,
+
                 detail="Student not found"
+
             )
 
         # Create student text
+
         student_text = " ".join([
+
             str(student.get("name", "")),
+
             str(student.get("skills", "")),
+
             str(student.get("education", "")),
+
             str(student.get("experience", "")),
+
             str(student.get("projects", ""))
+
         ])
 
         # Retrieve jobs
+
         jobs = search_jobs(
+
             student_text,
+
             top_k=60
+
         )
 
         # Find selected job
+
         selected_job = None
 
         for job in jobs:
+
             if job.get("job_id") == job_id:
+
                 selected_job = job
+
                 break
 
         if not selected_job:
+
             raise HTTPException(
+
                 status_code=404,
+
                 detail="Internship job not found"
+
             )
 
         # Generate cover letter
+
         cover_letter = generate_cover_letter(
+
             student,
+
             selected_job
+
         )
 
         # Save generated cover letter
+
         cover_letter_id = save_document(
+
             student_id=student_id,
+
             document_type="cover_letter",
+
             job_id=job_id,
+
             content=cover_letter
+
         )
 
         return {
+
             "student_id": student_id,
+
             "job_id": job_id,
+
             "cover_letter_id": cover_letter_id,
+
             "cover_letter": cover_letter
+
         }
 
     except HTTPException:
+
         raise
 
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
 
+        raise HTTPException(
+
+            status_code=500,
+
+            detail=str(e)
+
+        )
 
 @app.get("/interview-prep/{student_id}/{job_id}")
 
 def get_interview_prep(student_id: str, job_id: str):
 
     from bson import ObjectId
-
-
 
     try:
 
@@ -1103,8 +1111,6 @@ def get_interview_prep(student_id: str, job_id: str):
 
         )
 
-
-
         if not student:
 
             raise HTTPException(
@@ -1114,8 +1120,6 @@ def get_interview_prep(student_id: str, job_id: str):
                 detail="Student not found"
 
             )
-
-
 
         # Build student text for job retrieval
 
@@ -1133,8 +1137,6 @@ def get_interview_prep(student_id: str, job_id: str):
 
         ])
 
-
-
         # Retrieve available jobs
 
         jobs = search_jobs(
@@ -1145,13 +1147,9 @@ def get_interview_prep(student_id: str, job_id: str):
 
         )
 
-
-
         # Find selected job
 
         selected_job = None
-
-
 
         for job in jobs:
 
@@ -1160,8 +1158,6 @@ def get_interview_prep(student_id: str, job_id: str):
                 selected_job = job
 
                 break
-
-
 
         if not selected_job:
 
@@ -1173,8 +1169,6 @@ def get_interview_prep(student_id: str, job_id: str):
 
             )
 
-
-
         # Generate interview preparation plan
 
         interview_plan = generate_interview_plan(
@@ -1184,8 +1178,6 @@ def get_interview_prep(student_id: str, job_id: str):
             selected_job
 
         )
-
-
 
         return {
 
@@ -1197,13 +1189,9 @@ def get_interview_prep(student_id: str, job_id: str):
 
         }
 
-
-
     except HTTPException:
 
         raise
-
-
 
     except Exception as e:
 
@@ -1215,75 +1203,112 @@ def get_interview_prep(student_id: str, job_id: str):
 
         )
 
-
-
 # =========================================================
+
 # AI CAREER ASSISTANT
+
 # =========================================================
 
 @app.post("/career-assistant/{student_id}")
+
 def career_assistant(
+
     student_id: str,
+
     question: str
+
 ):
+
     from bson import ObjectId
 
     try:
 
         # -------------------------------------------------
+
         # Find student
+
         # -------------------------------------------------
 
         student = students_collection.find_one(
+
             {
+
                 "_id": ObjectId(student_id)
+
             }
+
         )
 
         if not student:
+
             raise HTTPException(
+
                 status_code=404,
+
                 detail="Student not found"
+
             )
 
         # -------------------------------------------------
+
         # Get previous conversation history
+
         # -------------------------------------------------
 
         history = get_conversation(student_id)
 
         # -------------------------------------------------
+
         # Create student text
+
         # -------------------------------------------------
 
         student_text = " ".join([
+
             str(student.get("name", "")),
+
             str(student.get("skills", "")),
+
             str(student.get("education", "")),
+
             str(student.get("experience", "")),
+
             str(student.get("projects", ""))
+
         ])
 
         # -------------------------------------------------
+
         # Retrieve internship matches
+
         # -------------------------------------------------
 
         retrieved_jobs = search_jobs(
+
             student_text,
+
             top_k=10
+
         )
 
         # -------------------------------------------------
+
         # Generate internship match results
+
         # -------------------------------------------------
 
         internship_matches = match_student_to_jobs(
+
             student,
+
             retrieved_jobs
+
         )
 
         # -------------------------------------------------
+
         # Generate skill-gap results
+
         # -------------------------------------------------
 
         skill_gap_results = []
@@ -1291,88 +1316,136 @@ def career_assistant(
         for job in retrieved_jobs:
 
             analysis = analyze_skill_gap(
+
                 student,
+
                 job
+
             )
 
             skill_gap_results.append(
+
                 analysis
+
             )
 
         # -------------------------------------------------
+
         # Save current user message
+
         # -------------------------------------------------
 
         add_message(
+
             student_id=student_id,
+
             role="user",
+
             message=question
+
         )
 
         # -------------------------------------------------
+
         # Ask Career Assistant
+
         # -------------------------------------------------
 
         result = answer_career_question(
+
             question=question,
+
             student=student,
+
             jobs=internship_matches,
+
             skill_gap_results=skill_gap_results,
+
             conversation_history=history
+
         )
 
         # -------------------------------------------------
+
         # Save assistant response
+
         # -------------------------------------------------
 
         add_message(
+
             student_id=student_id,
+
             role="assistant",
+
             message=result["response"]
+
         )
 
         # -------------------------------------------------
+
         # Get updated conversation
+
         # -------------------------------------------------
 
         updated_history = get_conversation(
+
             student_id
+
         )
 
         # -------------------------------------------------
+
         # Return response
+
         # -------------------------------------------------
 
         return {
+
             "student_id": student_id,
+
             "question": question,
+
             "intent": result["intent"],
+
             "response": result["response"],
+
             "conversation_history": [
+
                 {
+
                     "role": message.role,
+
                     "message": message.message,
+
                     "timestamp": message.timestamp
+
                 }
+
                 for message in updated_history
+
             ]
+
         }
 
     except HTTPException:
+
         raise
 
     except Exception as e:
 
         raise HTTPException(
+
             status_code=500,
+
             detail=str(e)
+
         )
 
-
 # =========================================================
+
 # M4 — APPLICATION TRACKING
-# =========================================================
 
+# =========================================================
 
 from backend.models.application import ApplicationCreate, ApplicationUpdate
 
@@ -1394,10 +1467,6 @@ from backend.services.application_tracker import (
 
 )
 
-
-
-
-
 @app.post("/applications/{student_id}")
 
 def add_application(
@@ -1412,8 +1481,6 @@ def add_application(
 
         application_data = application.model_dump()
 
-
-
         if application_data.get("status") not in APPLICATION_STATUSES:
 
             raise HTTPException(
@@ -1424,8 +1491,6 @@ def add_application(
 
             )
 
-
-
         application_id = create_application(
 
             student_id,
@@ -1433,8 +1498,6 @@ def add_application(
             application_data
 
         )
-
-
 
         return {
 
@@ -1444,13 +1507,9 @@ def add_application(
 
         }
 
-
-
     except HTTPException:
 
         raise
-
-
 
     except Exception as e:
 
@@ -1461,10 +1520,6 @@ def add_application(
             detail=str(e)
 
         )
-
-
-
-
 
 @app.get("/applications/{student_id}")
 
@@ -1494,8 +1549,6 @@ def list_applications(
 
         )
 
-
-
         return {
 
             "student_id": student_id,
@@ -1506,8 +1559,6 @@ def list_applications(
 
         }
 
-
-
     except Exception as e:
 
         raise HTTPException(
@@ -1517,10 +1568,6 @@ def list_applications(
             detail=str(e)
 
         )
-
-
-
-
 
 @app.get("/applications/{student_id}/dashboard")
 
@@ -1530,8 +1577,6 @@ def application_dashboard(student_id: str):
 
         dashboard = get_application_dashboard(student_id)
 
-
-
         return {
 
             "student_id": student_id,
@@ -1539,8 +1584,6 @@ def application_dashboard(student_id: str):
             **dashboard
 
         }
-
-
 
     except Exception as e:
 
@@ -1551,10 +1594,6 @@ def application_dashboard(student_id: str):
             detail=str(e)
 
         )
-
-
-
-
 
 @app.get("/application/{student_id}/{application_id}")
 
@@ -1576,8 +1615,6 @@ def get_single_application(
 
         )
 
-
-
         if not application:
 
             raise HTTPException(
@@ -1588,17 +1625,11 @@ def get_single_application(
 
             )
 
-
-
         return application
-
-
 
     except HTTPException:
 
         raise
-
-
 
     except Exception as e:
 
@@ -1609,10 +1640,6 @@ def get_single_application(
             detail=str(e)
 
         )
-
-
-
-
 
 @app.put("/application/{student_id}/{application_id}")
 
@@ -1638,8 +1665,6 @@ def edit_application(
 
         }
 
-
-
         if "status" in update_data:
 
             if update_data["status"] not in APPLICATION_STATUSES:
@@ -1652,8 +1677,6 @@ def edit_application(
 
                 )
 
-
-
         updated_application = update_application(
 
             application_id,
@@ -1663,8 +1686,6 @@ def edit_application(
             update_data
 
         )
-
-
 
         if not updated_application:
 
@@ -1676,8 +1697,6 @@ def edit_application(
 
             )
 
-
-
         return {
 
             "message": "Application updated successfully",
@@ -1686,13 +1705,9 @@ def edit_application(
 
         }
 
-
-
     except HTTPException:
 
         raise
-
-
 
     except Exception as e:
 
@@ -1703,10 +1718,6 @@ def edit_application(
             detail=str(e)
 
         )
-
-
-
-
 
 @app.delete("/application/{student_id}/{application_id}")
 
@@ -1728,8 +1739,6 @@ def remove_application(
 
         )
 
-
-
         if not deleted:
 
             raise HTTPException(
@@ -1739,8 +1748,6 @@ def remove_application(
                 detail="Application not found"
 
             )
-
-
 
         return {
 
