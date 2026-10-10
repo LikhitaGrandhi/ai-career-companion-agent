@@ -15,6 +15,7 @@ dependencies = [
     "pytesseract",
     "google-genai",
     "faiss-cpu",
+    "sentence-transformers",
 ]
 [tool.vercel]
 entrypoint = "backend.main:app"
