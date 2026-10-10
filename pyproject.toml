@@ -13,6 +13,7 @@ dependencies = [
     "bcrypt",
     "PyMuPDF",
     "pytesseract",
+    "google-genai",
 ]
 [tool.vercel]
 entrypoint = "backend.main:app"
