@@ -12,6 +12,7 @@ dependencies = [
     "passlib",
     "bcrypt",
     "PyMuPDF",
+    "pytesseract",
 ]
 [tool.vercel]
 entrypoint = "backend.main:app"
