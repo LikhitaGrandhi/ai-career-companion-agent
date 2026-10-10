@@ -8,7 +8,7 @@ dependencies = [
     "pymongo",
     "python-dotenv",
     "python-multipart",
+    "email-validator",
 ]
-
 [tool.vercel]
 entrypoint = "backend.main:app"
