@@ -9,7 +9,8 @@ dependencies = [
     "python-dotenv",
     "python-multipart",
     "email-validator",
+    "passlib",
+    "bcrypt",
 ]
-
 [tool.vercel]
 entrypoint = "backend.main:app"
